@@ -1,0 +1,24 @@
+topics:
+  - name: topic-1
+    partitionCount: 2
+    replicationFactor: 1
+    configSetName: default
+  - name: topic-2
+    partitionCount: 3
+    replicationFactor: 5
+    configOverrides:
+      flush.messages: 60
+      segment.index.bytes: 100
+  - name: topic-3
+    partitionCount: 2
+    replicationFactor: 2
+    configSetName: default
+    configOverrides:
+      cleanup.policy : delete
+
+configSets:
+  - name: default
+    configs:
+      flush.messages: 1
+      segment.index.bytes: 20
+      cleanup.policy : compact
