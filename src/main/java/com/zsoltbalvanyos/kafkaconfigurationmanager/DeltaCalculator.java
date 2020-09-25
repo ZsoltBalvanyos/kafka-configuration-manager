@@ -32,25 +32,27 @@ public class DeltaCalculator {
             .collect(toSet());
     }
 
-    public Map<String, Integer> partitionUpdate(Collection<Model.ExistingTopic> currentState, Collection<Model.Topic> requiredState) {
+    public Map<String, Optional<Integer>> partitionUpdate(Collection<Model.ExistingTopic> currentState, Collection<Model.Topic> requiredState) {
         Map<String, Set<Model.Partition>> currentStateMap = currentState.stream().collect(toMap(Model.ExistingTopic::getName, Model.ExistingTopic::getPartitions));
 
-        Map<String, Integer> result = new HashMap<>();
+        Map<String, Optional<Integer>> result = new HashMap<>();
 
         requiredState
             .stream()
             .filter(topic -> alreadyExists(currentState, topic))
-            .forEach(topic -> {
-            if (topic.getPartitionCount() < currentStateMap.get(topic.getName()).size()) {
-                throw new RuntimeException(
-                    String.format("Number of partitions cannot be lowered. Current number of partitions: %d, requested number of partitions: %d",
-                        currentStateMap.get(topic.getName()).size(),
-                        topic.getPartitionCount()));
-            }
-            if (topic.getPartitionCount() > currentStateMap.get(topic.getName()).size()) {
-                result.put(topic.getName(), topic.getPartitionCount());
-            }
-        });
+            .forEach(topic ->
+                topic.getPartitionCount().ifPresent(partitionCount -> {
+                    if (partitionCount < currentStateMap.get(topic.getName()).size()) {
+                        throw new RuntimeException(
+                            String.format("Number of partitions cannot be lowered. Current number of partitions: %d, requested number of partitions: %d",
+                                currentStateMap.get(topic.getName()).size(),
+                                partitionCount));
+                    }
+                    if (partitionCount > currentStateMap.get(topic.getName()).size()) {
+                        result.put(topic.getName(), topic.getPartitionCount());
+                    }
+                })
+            );
 
         return result;
     }
