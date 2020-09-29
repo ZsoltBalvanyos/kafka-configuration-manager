@@ -1,11 +1,13 @@
 topics:
   - name: topic-1
     configName: default
+
   - name: topic-2
     partitionCount: 3
     replicationFactor: 5
     flush.messages: 60
     segment.index.bytes: 100
+
   - name: topic-3
     configName: default
     replicationFactor: 2

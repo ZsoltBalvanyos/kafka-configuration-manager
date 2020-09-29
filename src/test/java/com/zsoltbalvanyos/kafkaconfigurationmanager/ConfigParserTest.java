@@ -18,8 +18,8 @@ public class ConfigParserTest {
         assertThat(result).containsExactlyInAnyOrderElementsOf(Set.of(
             new Model.Topic(
                 "topic-1",
-                2,
-                1,
+                Optional.of(2),
+                Optional.of(1),
                 Map.of(
                     "flush.messages", "1",
                     "segment.index.bytes", "20",
@@ -28,8 +28,8 @@ public class ConfigParserTest {
             ),
             new Model.Topic(
                 "topic-2",
-                3,
-                5,
+                Optional.of(3),
+                Optional.of(5),
                 Map.of(
                     "flush.messages", "60",
                     "segment.index.bytes", "100"
@@ -37,8 +37,8 @@ public class ConfigParserTest {
             ),
             new Model.Topic(
                 "topic-3",
-                2,
-                2,
+                Optional.of(2),
+                Optional.of(2),
                 Map.of(
                     "flush.messages", "1",
                     "segment.index.bytes", "20",

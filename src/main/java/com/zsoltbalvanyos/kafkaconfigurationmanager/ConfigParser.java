@@ -29,8 +29,8 @@ public class ConfigParser {
         configuration
             .getConfigSets()
             .forEach(configSet -> {
-                if (!configSet.containsKey("name") || configSet.get("name").isEmpty()) {
-                    throw new RuntimeException("Configuration set must have a non-empty name.");
+                if (!configSet.containsKey("name") || configSet.get("name").isBlank()) {
+                    throw new RuntimeException("Configuration set must have a non-blank name.");
                 }
                 String name = configSet.get("name");
                 configSet.remove("name");
@@ -51,19 +51,30 @@ public class ConfigParser {
         String name = topicDescription.get("name");
         topicDescription.remove("name");
 
-        Map<String, String> topicConfigs = new HashMap<>();
-
-        Optional
+        Map<String, String> topicConfigs = Optional
             .ofNullable(topicDescription.get("configName"))
-            .ifPresent(configName -> topicConfigs.putAll(configSetMap.getOrDefault(configName, new HashMap<>())));
+            .map(configName -> new HashMap<>(configSetMap.getOrDefault(configName, new HashMap<>())))
+            .orElse(new HashMap<>());
 
-        Optional<Integer> partitionCount = Optional.ofNullable(topicDescription.get("partitionCount")).map(Integer::valueOf);
-        Optional<Integer> replicationFactor = Optional.ofNullable(topicDescription.get("replicationFactor")).map(Integer::valueOf);
-        topicDescription.remove("partitionCount");
-        topicDescription.remove("replicationFactor");
-        topicDescription.remove("configName");
+        Optional<Integer> partitionCount = Optional
+            .ofNullable(topicDescription.get("partitionCount"))
+            .or(() -> Optional.ofNullable(topicConfigs.get("partitionCount")))
+            .map(Integer::valueOf);
+
+        Optional<Integer> replicationFactor = Optional
+            .ofNullable(topicDescription.get("replicationFactor"))
+            .or(() -> Optional.ofNullable(topicConfigs.get("replicationFactor")))
+            .map(Integer::valueOf);
+
+        if (replicationFactor.isPresent() && replicationFactor.get() > Short.toUnsignedInt(Short.MAX_VALUE)) {
+            throw new RuntimeException(String.format("Replication factor %d of topic %s is greater than %d", replicationFactor.get(), name, Short.MAX_VALUE));
+        }
 
         topicConfigs.putAll(topicDescription);
+
+        topicConfigs.remove("partitionCount");
+        topicConfigs.remove("replicationFactor");
+        topicConfigs.remove("configName");
 
         return new Topic(
             name,
