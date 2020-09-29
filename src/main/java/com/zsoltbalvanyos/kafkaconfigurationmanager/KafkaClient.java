@@ -24,13 +24,26 @@ public class KafkaClient {
     private final Admin admin;
 
     public Set<Model.Broker> getAllBrokers() throws ExecutionException, InterruptedException {
-        return admin
+        Set<ConfigResource> configResources = admin
             .describeCluster()
             .nodes()
             .get()
             .stream()
-            .map(node -> new Model.Broker(node.id()))
+            .map(node -> new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(node.id())))
             .collect(Collectors.toSet());
+
+        Set<Model.Broker> result = new HashSet<>();
+        admin
+            .describeConfigs(configResources)
+            .all()
+            .get()
+            .forEach((resource, config) -> {
+                Map<String, String> brokerConfig = new HashMap<>();
+                config.entries().stream().map(c -> brokerConfig.put(c.name(), c.value()));
+                result.add(new Model.Broker(Integer.parseInt(resource.name()), brokerConfig));
+            });
+
+        return result;
     }
 
     protected Collection<AclBinding> getAcls() throws ExecutionException, InterruptedException {
@@ -63,7 +76,6 @@ public class KafkaClient {
                             .replicas()
                             .stream()
                             .map(Node::id)
-                            .map(Model.Broker::new)
                             .collect(Collectors.toList())))
                     .collect(Collectors.toSet());
                 result.put(topicName, partitions);
@@ -109,7 +121,7 @@ public class KafkaClient {
     public void createTopics(Collection<Model.Topic> topics) throws ExecutionException, InterruptedException {
         Set<NewTopic> newTopics = topics
             .stream()
-            .map(topic -> new NewTopic(topic.getName(), topic.getPartitionCount(), (short) topic.getReplicationFactor()).configs(topic.getConfig()))
+            .map(topic -> new NewTopic(topic.getName(), topic.getPartitionCount(), topic.getReplicationFactor().map(Integer::shortValue)).configs(topic.getConfig()))
             .collect(Collectors.toSet());
 
         log.info("Creating topics: {}", newTopics);
@@ -127,11 +139,12 @@ public class KafkaClient {
         Map<TopicPartition, PartitionReassignment> ongoingAssignments;
         int retries = 0;
         do {
+            System.out.println(retries);
             ongoingAssignments = admin.listPartitionReassignments().reassignments().get();
             if (!ongoingAssignments.isEmpty()) {
-                Thread.sleep(100 * ++retries);
+                Thread.sleep(100 * (int) Math.pow(2, ++retries));
             }
-        } while (!ongoingAssignments.isEmpty() && retries < 10);
+        } while (!ongoingAssignments.isEmpty() && retries < 100);
 
         return true;
     }
@@ -148,7 +161,7 @@ public class KafkaClient {
         updates.forEach((topicName, partitions) ->
             partitions.forEach(partition -> topicPartitions.put(
                 new TopicPartition(topicName, partition.getPartitionNumber()),
-                Optional.of(new NewPartitionReassignment(partition.getReplicas().stream().map(Model.Broker::getId).collect(Collectors.toList())))))
+                Optional.of(new NewPartitionReassignment(partition.getReplicas()))))
         );
         log.info("Modifying replication: {}", topicPartitions);
         admin.alterPartitionReassignments(topicPartitions).all().get();

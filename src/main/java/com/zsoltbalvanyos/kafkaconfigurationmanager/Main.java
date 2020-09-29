@@ -55,15 +55,14 @@ public class Main implements Callable<Integer> {
 
         KafkaClient kafkaClient = new KafkaClient(adminClient);
         ConfigParser configParser = new ConfigParser(configurationsPath);
-        DeltaCalculator deltaCalculator = new DeltaCalculator();
+        DeltaCalculator deltaCalculator = new DeltaCalculator(kafkaClient.getAllBrokers());
         Reporter reporter = new Reporter();
 
-        Set<Model.Broker> allBrokers = kafkaClient.getAllBrokers();
         Set<Model.ExistingTopic> currentState = kafkaClient.getExistingTopics();
         Set<Model.Topic> requiredState = configParser.getRequiredState(configParser.getConfiguration());
 
         try {
-            process(kafkaClient, deltaCalculator, reporter, currentState, requiredState, allBrokers);
+            process(kafkaClient, deltaCalculator, reporter, currentState, requiredState);
         } catch (Exception e) {
             e.printStackTrace();
             log.error(e.getMessage());
@@ -77,13 +76,12 @@ public class Main implements Callable<Integer> {
                         DeltaCalculator deltaCalculator,
                         Reporter reporter,
                         Set<Model.ExistingTopic> currentState,
-                        Set<Model.Topic> requiredState,
-                        Set<Model.Broker> allBrokers) throws ExecutionException, InterruptedException {
+                        Set<Model.Topic> requiredState) throws ExecutionException, InterruptedException {
 
         log.info("Current state: {}", currentState);
         log.info("Required state: {}", requiredState);
 
-        Map<String, Collection<Model.Partition>> replicationChanges = deltaCalculator.replicationUpdate(currentState, requiredState, allBrokers);
+        Map<String, Collection<Model.Partition>> replicationChanges = deltaCalculator.replicationUpdate(currentState, requiredState);
         Map<String, Integer> partitionChanges = deltaCalculator.partitionUpdate(currentState, requiredState);
         Map<String, Map<String, Optional<String>>> topicConfigurationChanges = deltaCalculator.topicConfigUpdate(currentState, requiredState);
         Set<Model.Topic> topicsToCreate = deltaCalculator.topicsToCreate(currentState, requiredState);

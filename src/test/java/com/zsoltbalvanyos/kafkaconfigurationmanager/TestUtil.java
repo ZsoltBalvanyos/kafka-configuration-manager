@@ -5,9 +5,9 @@ import org.jeasy.random.EasyRandomParameters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.Random;
-import java.util.UUID;
 
 import static java.nio.charset.Charset.forName;
 
@@ -25,13 +25,13 @@ public class TestUtil {
             .seed(seed)
             .objectPoolSize(100)
             .randomizationDepth(3)
-            .charset(forName("UTF-8"))
+            .charset(StandardCharsets.UTF_8)
             .stringLengthRange(5, 10)
             .collectionSizeRange(1, 10)
             .scanClasspathForConcreteTypes(true)
             .overrideDefaultInitialization(false)
             .ignoreRandomizationErrors(true)
             .randomize(int.class, () -> new Random().nextInt(100))
-            .randomize(Optional.class, () -> Optional.of(UUID.randomUUID().toString()))
+            .randomize(Optional.class, () -> Optional.of(new Random().nextInt(100)))
         );
 }

@@ -58,11 +58,11 @@ public class KafkaClientTest {
             Set.of(
                 new ExistingTopic(
                     topicListing1.name(),
-                    Set.of(new Partition(0, List.of(new Broker(0)))),
+                    Set.of(new Partition(0, List.of(0))),
                     config1.entries().stream().filter(ce -> !ce.isDefault()).collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value))),
                 new ExistingTopic(
                     topicListing2.name(),
-                    Set.of(new Partition(0, List.of(new Broker(0)))),
+                    Set.of(new Partition(0, List.of(0))),
                     config2.entries().stream().filter(ce -> !ce.isDefault()).collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value)))
             )
         );

@@ -18,7 +18,16 @@ import java.util.stream.IntStream;
 public class DeltaCalculatorTest {
 
     EasyRandom random = TestUtil.randomizer;
-    DeltaCalculator deltaCalculator = new DeltaCalculator();
+    Set<Broker> allBrokers = createBrokers(12);
+    DeltaCalculator deltaCalculator = new DeltaCalculator(allBrokers);
+
+    private Set<Broker> createBrokers(int n) {
+        return IntStream.range(0, n).mapToObj(i -> new Broker(i + 1, Map.of())).collect(Collectors.toSet());
+    }
+
+    private Set<Broker> toBroker(Collection<Integer> n) {
+        return n.stream().map(i -> new Broker(i, Map.of())).collect(Collectors.toSet());
+    }
 
     @Test
     public void findNewTopics() {
@@ -101,30 +110,19 @@ public class DeltaCalculatorTest {
 
     @Test
     public void whenReplicationFactorIsIncreased_extraBrokersAreAdded() {
-        List<Broker> availableBrokers = List.of(
-            new Broker(0),
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5));
-        List<Broker> currentBrokers = List.of(
-            new Broker(6),
-            new Broker(7),
-            new Broker(8),
-            new Broker(9));
+        List<Integer> availableBrokers = List.of(0, 1, 2, 3, 4, 5);
+        List<Integer> currentBrokers = List.of(6, 7, 8, 9);
 
-        List<Broker> allBrokers = new ArrayList<>();
+        List<Integer> allBrokers = new ArrayList<>();
         allBrokers.addAll(availableBrokers);
         allBrokers.addAll(currentBrokers);
 
-        List<Broker> result = deltaCalculator.selectBrokersForReplication(
-            allBrokers,
+        List<Integer> result = new DeltaCalculator(toBroker(allBrokers)).selectBrokersForReplication(
             currentBrokers,
             7);
 
         assertThat(result).hasSize(7);
-        List<Broker> addedBrokers = new ArrayList<>();
+        List<Integer> addedBrokers = new ArrayList<>();
         addedBrokers.addAll(result);
         addedBrokers.removeAll(currentBrokers);
         assertThat(addedBrokers).hasSize(3);
@@ -133,34 +131,9 @@ public class DeltaCalculatorTest {
 
     @Test
     public void whenReplicationFactorIsLowered_unneededBrokersAreRemoved() {
-        List<Broker> allBrokers = List.of(
-            new Broker(0),
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5),
-            new Broker(6),
-            new Broker(7),
-            new Broker(8),
-            new Broker(9),
-            new Broker(10),
-            new Broker(11),
-            new Broker(12));
+        List<Integer> currentBrokers = List.of(1, 2, 3, 4, 5, 6, 7);
 
-        List<Broker> currentBrokers = List.of(
-            new Broker(0),
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5),
-            new Broker(6),
-            new Broker(7)
-        );
-
-        List<Broker> result = deltaCalculator.selectBrokersForReplication(
-            allBrokers,
+        List<Integer> result = new DeltaCalculator(allBrokers).selectBrokersForReplication(
             currentBrokers,
             4);
 
@@ -170,22 +143,8 @@ public class DeltaCalculatorTest {
 
     @Test
     public void whenReplicationFactorIsUnchanged_currentStateIsReturned() {
-        List<Broker> allBrokers = List.of(
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5),
-            new Broker(6)
-        );
-        List<Broker> currentBrokers = List.of(
-            new Broker(2),
-            new Broker(3),
-            new Broker(5),
-            new Broker(6)
-        );
-        List<Broker> result = deltaCalculator.selectBrokersForReplication(
-            allBrokers,
+        List<Integer> currentBrokers = List.of(2, 3, 5, 6);
+        List<Integer> result = new DeltaCalculator(toBroker(currentBrokers)).selectBrokersForReplication(
             currentBrokers,
             currentBrokers.size());
 
@@ -194,79 +153,40 @@ public class DeltaCalculatorTest {
 
     @Test
     public void whenCurrentBrokersIsNotSubsetOfAllBrokers_exceptionThrown() {
-        List<Broker> allBrokers = List.of(
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5),
-            new Broker(6)
-        );
-        List<Broker> currentBrokers = List.of(
-            new Broker(2),
-            new Broker(3),
-            new Broker(5),
-            new Broker(7)
-        );
+        List<Integer> currentBrokers = List.of(2, 3, 5, 14);
 
-        assertThatThrownBy(() -> deltaCalculator.selectBrokersForReplication(allBrokers, currentBrokers, currentBrokers.size()))
-            .hasMessage("Invalid replication state - All Brokers: [Model.Broker(id=1), Model.Broker(id=2), Model.Broker(id=3), Model.Broker(id=4), Model.Broker(id=5), Model.Broker(id=6)], Used Brokers: [Model.Broker(id=2), Model.Broker(id=3), Model.Broker(id=5), Model.Broker(id=7)]");
+        assertThatThrownBy(() -> deltaCalculator.selectBrokersForReplication(currentBrokers, currentBrokers.size()))
+            .hasMessageContaining("Invalid replication state");
     }
 
     @Test
     public void whenReplicationFactorIsLessThanOne_exceptionThrown() {
-        List<Broker> allBrokers = List.of(
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5),
-            new Broker(6)
-        );
-        List<Broker> currentBrokers = List.of(
-            new Broker(2),
-            new Broker(3),
-            new Broker(5),
-            new Broker(6)
-        );
+        List<Integer> currentBrokers = List.of(2, 3, 5, 6);
 
-        assertThatThrownBy(() -> deltaCalculator.selectBrokersForReplication(allBrokers, currentBrokers, 0))
+        assertThatThrownBy(() -> deltaCalculator.selectBrokersForReplication(currentBrokers, 0))
             .hasMessage("Replication factor must be greater than 0");
     }
 
     @Test
     public void whenReplicationFactorGreaterThanAllBrokers_exceptionThrown() {
-        List<Broker> allBrokers = List.of(
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5),
-            new Broker(6)
-        );
-        List<Broker> currentBrokers = List.of(
-            new Broker(2),
-            new Broker(3),
-            new Broker(5),
-            new Broker(6)
-        );
+        List<Integer> currentBrokers = List.of(2, 3, 5, 6);
 
-        assertThatThrownBy(() -> deltaCalculator.selectBrokersForReplication(allBrokers, currentBrokers, allBrokers.size() + 1))
+        assertThatThrownBy(() -> deltaCalculator.selectBrokersForReplication(currentBrokers, allBrokers.size() + 1))
             .hasMessage(String.format("Replication factor [%d] must not be greater than the number of brokers [%d]", allBrokers.size() + 1, allBrokers.size()));
     }
 
     @Test
     public void whenPartitionCountIncreased_topicWithNewPartitionCountIncluded() {
         Set<ExistingTopic> currentState = Set.of(
-            new ExistingTopic("topic-1", Set.of(new Partition(0, List.of(new Broker(0)))), Map.of()),
-            new ExistingTopic("topic-2", Set.of(new Partition(0, List.of(new Broker(0)))), Map.of()),
-            new ExistingTopic("topic-3", Set.of(new Partition(0, List.of(new Broker(0)))), Map.of())
+            new ExistingTopic("topic-1", Set.of(new Partition(0, List.of(0))), Map.of()),
+            new ExistingTopic("topic-2", Set.of(new Partition(0, List.of(0))), Map.of()),
+            new ExistingTopic("topic-3", Set.of(new Partition(0, List.of(0))), Map.of())
         );
 
         Set<Topic> requiredState = Set.of(
-            new Topic("topic-1", 1, 1, Map.of()),
-            new Topic("topic-2", 4, 1, Map.of()),
-            new Topic("topic-3", 2, 1, Map.of())
+            new Topic("topic-1", Optional.of(1), Optional.of(1), Map.of()),
+            new Topic("topic-2", Optional.of(4), Optional.of(1), Map.of()),
+            new Topic("topic-3", Optional.of(2), Optional.of(1), Map.of())
         );
 
         Map<String, Integer> result = deltaCalculator.partitionUpdate(
@@ -284,20 +204,20 @@ public class DeltaCalculatorTest {
     @Test
     public void whenPartitionCountDecreased_errorThrown() {
         Set<ExistingTopic> currentState = Set.of(
-            new ExistingTopic("topic-1", Set.of(new Partition(0, List.of(new Broker(0)))), Map.of()),
-            new ExistingTopic("topic-2", Set.of(new Partition(0, List.of(new Broker(0)))), Map.of()),
+            new ExistingTopic("topic-1", Set.of(new Partition(0, List.of(0))), Map.of()),
+            new ExistingTopic("topic-2", Set.of(new Partition(0, List.of(0))), Map.of()),
             new ExistingTopic(
                 "topic-3", Set.of(
-                    new Partition(0, List.of(new Broker(0))),
-                    new Partition(1, List.of(new Broker(0))),
-                    new Partition(2, List.of(new Broker(0)))),
+                    new Partition(0, List.of(0)),
+                    new Partition(1, List.of(0)),
+                    new Partition(2, List.of(0))),
                 Map.of())
         );
 
         Set<Topic> requiredState = Set.of(
-            new Topic("topic-1", 1, 1, Map.of()),
-            new Topic("topic-2", 4, 1, Map.of()),
-            new Topic("topic-3", 2, 1, Map.of())
+            new Topic("topic-1", Optional.of(1), Optional.of(1), Map.of()),
+            new Topic("topic-2", Optional.of(4), Optional.of(1), Map.of()),
+            new Topic("topic-3", Optional.of(2), Optional.of(1), Map.of())
         );
 
         assertThatThrownBy(() -> deltaCalculator.partitionUpdate(currentState, requiredState))
@@ -308,37 +228,28 @@ public class DeltaCalculatorTest {
     public void testReplication() {
         Set<ExistingTopic> currentState = Set.of(
             new ExistingTopic("topic-1", Set.of(
-                new Partition(0, List.of(new Broker(1), new Broker(3), new Broker(4))),
-                new Partition(1, List.of(new Broker(3)))), Map.of()),
-            new ExistingTopic("topic-3", Set.of(new Partition(0, List.of(new Broker(1), new Broker(2), new Broker(3)))), Map.of())
+                new Partition(0, List.of(1, 3, 4)),
+                new Partition(1, List.of(3))), Map.of()),
+            new ExistingTopic("topic-3", Set.of(new Partition(0, List.of(1, 2, 3))), Map.of())
         );
 
         Set<Topic> requiredState = Set.of(
-            new Topic("topic-1", 2, 3, Map.of()),
-            new Topic("topic-3", 1, 2, Map.of())
-        );
-
-        List<Broker> allBrokers = List.of(
-            new Broker(1),
-            new Broker(2),
-            new Broker(3),
-            new Broker(4),
-            new Broker(5),
-            new Broker(6)
+            new Topic("topic-1", Optional.of(2), Optional.of(3), Map.of()),
+            new Topic("topic-3", Optional.of(1), Optional.of(2), Map.of())
         );
 
         DeltaCalculator deltaCalculator = mock(DeltaCalculator.class);
-        when(deltaCalculator.selectBrokersForReplication(any(), eq(List.of(new Broker(1), new Broker(3), new Broker(4))), eq(3))).thenReturn(List.of(new Broker(1), new Broker(3), new Broker(4)));
-        when(deltaCalculator.selectBrokersForReplication(any(), eq(List.of(new Broker(3))), eq(3))).thenReturn(List.of(new Broker(3), new Broker(5), new Broker(6)));
-        when(deltaCalculator.selectBrokersForReplication(any(), eq(List.of(new Broker(1), new Broker(2), new Broker(3))), eq(2))).thenReturn(List.of(new Broker(1), new Broker(2)));
-        when(deltaCalculator.replicationUpdate(currentState, requiredState, Set.copyOf(allBrokers))).thenCallRealMethod();
+        when(deltaCalculator.selectBrokersForReplication(eq(List.of(1, 3, 4)), eq(3))).thenReturn(List.of(1, 3, 4));
+        when(deltaCalculator.selectBrokersForReplication(eq(List.of(3)), eq(3))).thenReturn(List.of(3, 5, 6));
+        when(deltaCalculator.selectBrokersForReplication(eq(List.of(1, 2, 3)), eq(2))).thenReturn(List.of(1, 2));
+        when(deltaCalculator.replicationUpdate(currentState, requiredState)).thenCallRealMethod();
 
-        Map<String, Collection<Partition>> result = deltaCalculator.replicationUpdate(currentState, requiredState, Set.copyOf(allBrokers));
+        Map<String, Collection<Partition>> result = deltaCalculator.replicationUpdate(currentState, requiredState);
 
         assertThat(result).containsExactlyInAnyOrderEntriesOf(
             Map.of(
-                "topic-1", Set.of(new Partition(1, List.of(new Broker(3), new Broker(5), new Broker(6)))),
-                "topic-3", Set.of(new Partition(0, List.of(new Broker(1), new Broker(2))))
+                "topic-1", Set.of(new Partition(1, List.of(3, 5, 6))),
+                "topic-3", Set.of(new Partition(0, List.of(1, 2)))
             )
         );
     }
@@ -349,8 +260,8 @@ public class DeltaCalculatorTest {
 
     private ExistingTopic toExisting(Topic topic) {
         Set<Partition> partitions = IntStream
-            .range(0, topic.getPartitionCount())
-            .mapToObj(no -> new Partition(no, IntStream.range(0, topic.getReplicationFactor()).mapToObj(Broker::new).collect(Collectors.toList())))
+            .range(0, topic.getPartitionCount().orElse(1))
+            .mapToObj(no -> new Partition(no, IntStream.range(0, topic.getReplicationFactor().orElse(1)).mapToObj(Integer::valueOf).collect(Collectors.toList())))
             .collect(Collectors.toSet());
 
         return new ExistingTopic(

@@ -1,5 +1,6 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
+import com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
@@ -15,41 +16,71 @@ public class ConfigParser {
 
     final String pathToConfigs;
 
-    public Model.Configuration getConfiguration() throws IOException {
+    public Configuration getConfiguration() throws IOException {
         return new ObjectMapper(new YAMLFactory())
             .registerModule(new Jdk8Module())
-            .readValue(new File(pathToConfigs), Model.Configuration.class);
+            .readValue(new File(pathToConfigs), Configuration.class);
     }
 
-    public Set<Model.Topic> getRequiredState(Model.Configuration configuration) {
+    public Set<Model.Topic> getRequiredState(Configuration configuration) {
 
-        Map<String, Map<String, String>> configSetMap =
-            configuration
-                .getConfigSets()
-                .stream()
-                .collect(Collectors.toMap(Model.ConfigSet::getName, Model.ConfigSet::getConfigs));
+        Map<String, Map<String, String>> configSetMap = new HashMap<>();
+
+        configuration
+            .getConfigSets()
+            .forEach(configSet -> {
+                if (!configSet.containsKey("name") || configSet.get("name").isBlank()) {
+                    throw new RuntimeException("Configuration set must have a non-blank name.");
+                }
+                String name = configSet.get("name");
+                configSet.remove("name");
+                configSetMap.put(name, configSet);
+            });
 
         return configuration
             .getTopics()
             .stream()
-            .map(topic -> {
-                Map<String, String> normalizedConfigs = topic
-                    .getConfigSetName()
-                    .map(configSetName -> {
-                        if (!configSetMap.containsKey(configSetName)) {
-                            throw new RuntimeException("No config set has been defined with name " + configSetName);
-                        }
-                        Map<String, String> configSetOfThisTopic = new HashMap<>(configSetMap.get(configSetName));
-                        configSetOfThisTopic.putAll(topic.getConfigOverrides());
-                        return configSetOfThisTopic; })
-                    .orElse(topic.getConfigOverrides());
-
-                return new Model.Topic(
-                    topic.getName(),
-                    topic.getPartitionCount(),
-                    topic.getReplicationFactor(),
-                    normalizedConfigs); })
+            .map(t -> buildTopic(t, configSetMap))
             .collect(Collectors.toSet());
+    }
+
+    protected Topic buildTopic(Map<String, String> topicDescription, Map<String, Map<String, String>> configSetMap) {
+        if (!topicDescription.containsKey("name") || topicDescription.get("name").isEmpty()) {
+            throw new RuntimeException("Topic definition must have a non-empty name");
+        }
+        String name = topicDescription.get("name");
+        topicDescription.remove("name");
+
+        Map<String, String> topicConfigs = Optional
+            .ofNullable(topicDescription.get("configName"))
+            .map(configName -> new HashMap<>(configSetMap.getOrDefault(configName, new HashMap<>())))
+            .orElse(new HashMap<>());
+
+        Optional<Integer> partitionCount = Optional
+            .ofNullable(topicDescription.get("partitionCount"))
+            .or(() -> Optional.ofNullable(topicConfigs.get("partitionCount")))
+            .map(Integer::valueOf);
+
+        Optional<Integer> replicationFactor = Optional
+            .ofNullable(topicDescription.get("replicationFactor"))
+            .or(() -> Optional.ofNullable(topicConfigs.get("replicationFactor")))
+            .map(Integer::valueOf);
+
+        if (replicationFactor.isPresent() && replicationFactor.get() > Short.toUnsignedInt(Short.MAX_VALUE)) {
+            throw new RuntimeException(String.format("Replication factor %d of topic %s is greater than %d", replicationFactor.get(), name, Short.MAX_VALUE));
+        }
+
+        topicConfigs.putAll(topicDescription);
+
+        topicConfigs.remove("partitionCount");
+        topicConfigs.remove("replicationFactor");
+        topicConfigs.remove("configName");
+
+        return new Topic(
+            name,
+            partitionCount,
+            replicationFactor,
+            topicConfigs);
     }
 
 }

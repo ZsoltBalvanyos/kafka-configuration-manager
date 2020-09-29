@@ -2,81 +2,88 @@ package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
 import static java.util.stream.Collectors.*;
 
+import com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
+import lombok.RequiredArgsConstructor;
 import lombok.Value;
+import org.apache.kafka.common.utils.AppInfoParser;
 
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+@RequiredArgsConstructor
 public class DeltaCalculator {
 
-    public Set<Model.Topic> topicsToCreate(Collection<Model.ExistingTopic> currentState, Collection<Model.Topic> requiredState) {
+    final Set<Broker> allBrokers;
+
+    public Set<Topic> topicsToCreate(Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
         return requiredState
             .stream()
             .filter(topic -> !currentState
                 .stream()
-                .map(Model.ExistingTopic::getName)
+                .map(ExistingTopic::getName)
                 .collect(toSet())
                 .contains(topic.getName()))
             .collect(toSet());
     }
 
-    public Set<Model.ExistingTopic> topicsToDelete(Collection<Model.ExistingTopic> currentState, Collection<Model.Topic> requiredState) {
+    public Set<ExistingTopic> topicsToDelete(Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
         return currentState
             .stream()
             .filter(topic -> !requiredState
                 .stream()
-                .map(Model.Topic::getName)
+                .map(Topic::getName)
                 .collect(toSet())
                 .contains(topic.getName()))
             .collect(toSet());
     }
 
-    public Map<String, Integer> partitionUpdate(Collection<Model.ExistingTopic> currentState, Collection<Model.Topic> requiredState) {
-        Map<String, Set<Model.Partition>> currentStateMap = currentState.stream().collect(toMap(Model.ExistingTopic::getName, Model.ExistingTopic::getPartitions));
+    public Map<String, Integer> partitionUpdate(Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
+        Map<String, Set<Partition>> currentStateMap = currentState.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getPartitions));
 
         Map<String, Integer> result = new HashMap<>();
 
         requiredState
             .stream()
             .filter(topic -> alreadyExists(currentState, topic))
-            .forEach(topic -> {
-            if (topic.getPartitionCount() < currentStateMap.get(topic.getName()).size()) {
-                throw new RuntimeException(
-                    String.format("Number of partitions cannot be lowered. Current number of partitions: %d, requested number of partitions: %d",
-                        currentStateMap.get(topic.getName()).size(),
-                        topic.getPartitionCount()));
-            }
-            if (topic.getPartitionCount() > currentStateMap.get(topic.getName()).size()) {
-                result.put(topic.getName(), topic.getPartitionCount());
-            }
-        });
+            .forEach(topic ->
+                topic.getPartitionCount().ifPresent(partitionCount -> {
+                    if (partitionCount < currentStateMap.get(topic.getName()).size()) {
+                        throw new RuntimeException(
+                            String.format("Number of partitions cannot be lowered. Current number of partitions: %d, requested number of partitions: %d",
+                                currentStateMap.get(topic.getName()).size(),
+                                partitionCount));
+                    }
+                    if (partitionCount > currentStateMap.get(topic.getName()).size()) {
+                        result.put(topic.getName(), topic.getPartitionCount().orElseGet(this::getDefaultPartitionCount));
+                    }
+                })
+            );
 
         return result;
     }
 
-    public Map<String, Collection<Model.Partition>> replicationUpdate(Set<Model.ExistingTopic> currentState, Set<Model.Topic> requiredState, Set<Model.Broker> allBrokers) {
-        Map<String, Collection<Model.Partition>> result = new HashMap<>();
+    public Map<String, Collection<Partition>> replicationUpdate(Set<ExistingTopic> currentState, Set<Topic> requiredState) {
+        Map<String, Collection<Partition>> result = new HashMap<>();
 
-        Map<String, Map<Integer, List<Model.Broker>>> currentPartitions = currentState
+        Map<String, Map<Integer, List<Integer>>> currentPartitions = currentState
             .stream()
             .collect(toMap(
-                Model.ExistingTopic::getName,
-                e -> e.getPartitions().stream().collect(toMap(Model.Partition::getPartitionNumber, Model.Partition::getReplicas))));
+                ExistingTopic::getName,
+                e -> e.getPartitions().stream().collect(toMap(Partition::getPartitionNumber, Partition::getReplicas))));
 
         requiredState
             .stream()
             .filter(topic -> alreadyExists(currentState, topic))
             .forEach(topic -> {
-                Set<Model.Partition> partitions = IntStream
+                Set<Partition> partitions = IntStream
                     .range(0, currentPartitions.get(topic.getName()).size())
-                    .filter(partition -> currentPartitions.get(topic.getName()).get(partition).size() != topic.getReplicationFactor())
-                    .mapToObj(partition -> new Model.Partition(
+                    .filter(partition -> currentPartitions.get(topic.getName()).get(partition).size() != topic.getReplicationFactor().orElseGet(this::getDefaultReplicationFactor))
+                    .mapToObj(partition -> new Partition(
                         partition,
                         selectBrokersForReplication(
-                            allBrokers,
                             currentPartitions.get(topic.getName()).get(partition),
-                            topic.getReplicationFactor())))
+                            topic.getReplicationFactor().orElseGet(this::getDefaultReplicationFactor))))
                     .collect(Collectors.toSet());
 
                 if (!partitions.isEmpty()) {
@@ -87,8 +94,8 @@ public class DeltaCalculator {
         return result;
     }
 
-    protected List<Model.Broker> selectBrokersForReplication(Collection<Model.Broker> allBrokers, List<Model.Broker> currentState, int replicationFactor) {
-        if (!allBrokers.containsAll(currentState)) {
+    protected List<Integer> selectBrokersForReplication(List<Integer> currentState, int replicationFactor) {
+        if (!allBrokers.stream().map(Broker::getId).collect(Collectors.toList()).containsAll(currentState)) {
             throw new RuntimeException(String.format("Invalid replication state - All Brokers: %s, Used Brokers: %s", allBrokers.toString(), currentState.toString()));
         }
         if (replicationFactor < 1) {
@@ -99,24 +106,24 @@ public class DeltaCalculator {
         }
 
         if (replicationFactor > currentState.size()) {
-            List<Model.Broker> availableBrokers = new ArrayList<>(allBrokers);
+            List<Integer> availableBrokers = allBrokers.stream().map(Broker::getId).collect(Collectors.toList());
             availableBrokers.removeAll(currentState);
             Collections.shuffle(availableBrokers);
-            List<Model.Broker> result = availableBrokers.subList(0, replicationFactor - currentState.size());
+            List<Integer> result = availableBrokers.subList(0, replicationFactor - currentState.size());
             result.addAll(currentState);
             return result;
         } else {
-            List<Model.Broker> currentStateMutable = new ArrayList<>(currentState);
+            List<Integer> currentStateMutable = new ArrayList<>(currentState);
             Collections.shuffle(currentStateMutable);
             return currentStateMutable.subList(0, replicationFactor);
         }
     }
 
-    public Map<String, Map<String, Optional<String>>> topicConfigUpdate(Collection<Model.ExistingTopic> currentState, Collection<Model.Topic> requiredState) {
+    public Map<String, Map<String, Optional<String>>> topicConfigUpdate(Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
         Map<String, Map<String, Optional<String>>> result = new HashMap<>();
 
-        Map<String, Map<String, String>> currentConfig = currentState.stream().collect(toMap(Model.ExistingTopic::getName, Model.ExistingTopic::getConfig));
-        Map<String, Map<String, String>> requiredConfig = requiredState.stream().collect(toMap(Model.Topic::getName, Model.Topic::getConfig));
+        Map<String, Map<String, String>> currentConfig = currentState.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
+        Map<String, Map<String, String>> requiredConfig = requiredState.stream().collect(toMap(Topic::getName, Topic::getConfig));
 
         requiredState
             .stream()
@@ -143,12 +150,36 @@ public class DeltaCalculator {
         return result;
     }
 
-    private boolean alreadyExists(Collection<Model.ExistingTopic> existingTopics, Model.Topic topic) {
+    private boolean alreadyExists(Collection<ExistingTopic> existingTopics, Topic topic) {
         return existingTopics
             .stream()
-            .map(Model.ExistingTopic::getName)
+            .map(ExistingTopic::getName)
             .collect(toSet())
             .contains(topic.getName());
+    }
+
+    private Integer getDefaultReplicationFactor() {
+        assert allBrokers != null;
+        return allBrokers
+            .stream()
+            .map(Broker::getConfig)
+            .map(config -> config.get("default.replication.factor"))
+            .filter(Objects::nonNull)
+            .map(Integer::valueOf)
+            .max(Integer::compareTo)
+            .orElse(1);
+    }
+
+    private Integer getDefaultPartitionCount() {
+        assert allBrokers != null;
+        return allBrokers
+            .stream()
+            .map(Broker::getConfig)
+            .map(config -> config.get("num.partitions"))
+            .filter(Objects::nonNull)
+            .map(Integer::valueOf)
+            .max(Integer::compareTo)
+            .orElse(1);
     }
 
     @Value
