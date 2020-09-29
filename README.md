@@ -23,35 +23,26 @@ parameter is the path to the configuration file. The following is an example of 
 ```yaml
 topics:
   - name: topic-1
-    partitionCount: 10
-    replicationFactor: 1
-    configSetName: durable
+    configName: default
+
   - name: topic-2
-    partitionCount: 12
-    replicationFactor: 3
-    configOverrides:
-      flush.messages: 60
-      segment.index.bytes: 100
+    partitionCount: 3
+    replicationFactor: 5
+    flush.messages: 60
+    segment.index.bytes: 100
+
   - name: topic-3
-    partitionCount: 200
-    replicationFactor: 3
-    configSetName: performant
-    configOverrides:
-      cleanup.policy : delete
-  - name: topic-4
-    partitionCount: 2
+    configName: default
     replicationFactor: 2
-    
+    cleanup.policy : delete
+
 configSets:
-  - name: durable
-    configs:
-      min.insync.replicas: 2
-      flush.messages: 1
-  - name: performant
-    configs:
-      min.insync.replicas: 1
-      segment.index.bytes: 20
-      retention.ms : 1000
+  - name: default
+    partitionCount: 2
+    replicationFactor: 1
+    flush.messages: 1
+    segment.index.bytes: 20
+    cleanup.policy : compact
 ```
 
 You can create and name config sets that can be referenced from the topics, but these can be overridden on each topic. 
