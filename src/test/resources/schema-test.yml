@@ -20,3 +20,17 @@ configSets:
     flush.messages: 1
     segment.index.bytes: 20
     cleanup.policy : compact
+
+acls:
+  - resourceType: TOPIC
+    name: "*"
+    patternType: PREFIXED
+    permissions:
+      - principal: User:alice
+        operation: ALL
+        permissionType: ALLOW
+        host: localhost
+      - principal: User:bob
+        operation: ALL
+        permissionType: ALLOW
+        host: localhost

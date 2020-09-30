@@ -1,6 +1,6 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
-import com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
+import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
@@ -22,7 +22,7 @@ public class ConfigParser {
             .readValue(new File(pathToConfigs), Configuration.class);
     }
 
-    public Set<Model.Topic> getRequiredState(Configuration configuration) {
+    public Set<Topic> getRequiredState(Configuration configuration) {
 
         Map<String, Map<String, String>> configSetMap = new HashMap<>();
 

@@ -4,25 +4,20 @@ import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import static java.util.stream.Collectors.toMap;
 import static picocli.CommandLine.*;
 
-import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.common.config.SecurityConfig;
-import org.apache.kafka.common.config.SslConfigs;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Option;
 
+import java.io.FileReader;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 
 public class Main implements Callable<Integer> {
-
-    // TODO: 13/09/2020 acl management
 
     Logger log = LoggerFactory.getLogger(getClass().getName());
 
@@ -32,8 +27,8 @@ public class Main implements Callable<Integer> {
     @Option(names = { "-c", "--configurations"})
     String configurationsPath;
 
-    @Option(names = { "-t", "--truststore-location"})
-    String truststoreLocation;
+    @Option(names= { "-p", "--properties"})
+    String propertiesLocation;
 
     Reporter reporter = new Reporter();
 
@@ -48,7 +43,7 @@ public class Main implements Callable<Integer> {
     }
 
     @Command(name = "describe")
-    public void describe() throws ExecutionException, InterruptedException {
+    public void describe() throws ExecutionException, InterruptedException, IOException {
         KafkaClient kafkaClient = getKafkaClient();
         try {
             reporter.print(kafkaClient.getExistingTopics());
@@ -78,7 +73,8 @@ public class Main implements Callable<Integer> {
     public void apply() throws Exception {
         KafkaClient kafkaClient = getKafkaClient();
         try {
-            DeltaCalculator deltaCalculator = new DeltaCalculator(kafkaClient.getAllBrokers());
+            Set<Broker> allBrokers = kafkaClient.getAllBrokers();
+            DeltaCalculator deltaCalculator = new DeltaCalculator(allBrokers);
             ExecutionPlan executionPlan = getExecutionPlan(kafkaClient, deltaCalculator);
             reporter.print(executionPlan);
             new Executor(kafkaClient, deltaCalculator).run(executionPlan);
@@ -92,7 +88,8 @@ public class Main implements Callable<Integer> {
 
     private ExecutionPlan getExecutionPlan(KafkaClient kafkaClient, DeltaCalculator deltaCalculator) throws ExecutionException, InterruptedException, IOException {
         ConfigParser configParser = new ConfigParser(configurationsPath);
-        Set<Topic> requiredState = configParser.getRequiredState(configParser.getConfiguration());
+        Configuration configuration = configParser.getConfiguration();
+        Set<Topic> requiredState = configParser.getRequiredState(configuration);
 
         Set<ExistingTopic> existingTopics = kafkaClient.getExistingTopics();
 
@@ -104,6 +101,9 @@ public class Main implements Callable<Integer> {
             .stream()
             .collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
 
+        Set<Acl> currentAcls = kafkaClient.getAcls();
+        Set<Acl> requiredAcls = configuration.getAcls();
+
         return new ExecutionPlan(
             originalConfigs,
             originalPartitions,
@@ -111,18 +111,16 @@ public class Main implements Callable<Integer> {
             deltaCalculator.partitionUpdate(existingTopics, requiredState),
             deltaCalculator.topicConfigUpdate(existingTopics, requiredState),
             deltaCalculator.topicsToCreate(existingTopics, requiredState),
-            deltaCalculator.topicsToDelete(existingTopics, requiredState)
+            deltaCalculator.topicsToDelete(existingTopics, requiredState),
+            deltaCalculator.aclsToCreate(currentAcls, requiredAcls),
+            deltaCalculator.aclsToDelete(currentAcls, requiredAcls)
         );
     }
 
-    private KafkaClient getKafkaClient() {
+    private KafkaClient getKafkaClient() throws IOException {
         Properties properties = new Properties();
+        properties.load(new FileReader(propertiesLocation));
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
-
-        if (truststoreLocation != null) {
-            properties.put(AdminClientConfig.SECURITY_PROTOCOL_CONFIG, SecurityProtocol.SSL.name);
-            properties.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, truststoreLocation);
-        }
 
         Admin admin = Admin.create(properties);
         return new KafkaClient(admin);

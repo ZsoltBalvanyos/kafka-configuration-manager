@@ -15,6 +15,20 @@ public class DeltaCalculator {
 
     final Set<Broker> allBrokers;
 
+    public Set<Acl> aclsToCreate(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
+        return requiredAcls
+            .stream()
+            .filter(acl -> !currentAcls.contains(acl))
+            .collect(toSet());
+    }
+
+    public Set<Acl> aclsToDelete(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
+        return currentAcls
+            .stream()
+            .filter(acl -> !requiredAcls.contains(acl))
+            .collect(toSet());
+    }
+
     public Set<Topic> topicsToCreate(Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
         return requiredState
             .stream()

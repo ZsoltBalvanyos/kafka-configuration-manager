@@ -46,5 +46,17 @@ public class ConfigParserTest {
                 )
             )
         ));
+
+        assertThat(configuration.getAcls()).containsExactlyInAnyOrderElementsOf(
+            Set.of(
+                new Model.Acl(
+                    "TOPIC",
+                    "*",
+                    "PREFIXED",
+                    Set.of(
+                        new Model.Permission("User:alice", "localhost", "ALL", "ALLOW"),
+                        new Model.Permission("User:bob", "localhost", "ALL", "ALLOW")
+                    )))
+        );
     }
 }

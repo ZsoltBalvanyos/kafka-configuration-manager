@@ -21,21 +21,33 @@ public class Executor {
     public void run(ExecutionPlan plan) throws Exception {
 
         try {
+            if (!plan.getAclsToDelete().isEmpty()) {
+                //TODO rollback
+                kafkaClient.deleteAcls(plan.getAclsToDelete());
+                log.info("ACLs have been deleted successfully");
+            }
+
+            if (!plan.getAclsToCreate().isEmpty()) {
+                //TODO rollback
+                kafkaClient.createAcls(plan.getAclsToCreate());
+                log.info("New ACLs have been added successfully");
+            }
+
             if (!plan.getTopicConfigurationChanges().isEmpty()) {
-                kafkaClient.updateConfigOfTopics(plan.getTopicConfigurationChanges());
                 rollbacks.add(rollbackConfig(plan.getOriginalConfigs(), plan.getTopicConfigurationChanges()));
+                kafkaClient.updateConfigOfTopics(plan.getTopicConfigurationChanges());
                 log.info("Topic configurations have been updated successfully.");
             }
 
             if (!plan.getTopicsToCreate().isEmpty()) {
-                kafkaClient.createTopics(plan.getTopicsToCreate());
                 rollbacks.add(rollbackCreate(plan.getTopicsToCreate()));
+                kafkaClient.createTopics(plan.getTopicsToCreate());
                 log.info("Topics have been created successfully.");
             }
 
             if (!plan.getReplicationChanges().isEmpty()) {
-                kafkaClient.updateReplication(plan.getReplicationChanges());
                 rollbacks.add(rollbackReplication(plan.getOriginalPartitions(), plan.getReplicationChanges()));
+                kafkaClient.updateReplication(plan.getReplicationChanges());
                 log.info("Replication factors have been updated successfully.");
             }
 
@@ -58,6 +70,7 @@ public class Executor {
             for(Callable<String> rollback: rollbacks) {
                 log.warn(rollback.call());
             }
+            log.error(Arrays.stream(e.getStackTrace()).map(StackTraceElement::toString).collect(Collectors.joining("\n\t")));
         }
     }
 

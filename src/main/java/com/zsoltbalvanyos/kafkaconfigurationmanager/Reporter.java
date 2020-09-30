@@ -33,13 +33,29 @@ public class Reporter {
         StringBuilder sb = new StringBuilder();
         sb.append(NEWLINE);
 
+        if (!plan.getAclsToCreate().isEmpty()) {
+            sb.append(NEWLINE)
+                .append("ACLs to create:")
+                .append(NEWLINE)
+                .append(printAcls(plan.getAclsToCreate()))
+                .append(NEWLINE);
+        }
+
+        if (!plan.getAclsToDelete().isEmpty()) {
+            sb.append(NEWLINE)
+                .append("ACLs to delete:")
+                .append(NEWLINE)
+                .append(printAcls(plan.getAclsToDelete()))
+                .append(NEWLINE);
+        }
+
         if (!plan.getReplicationChanges().isEmpty()) {
             sb.append(NEWLINE)
                 .append("Changes in replication:")
                 .append(NEWLINE);
             plan.getReplicationChanges().forEach((topicName, partition) -> {
-                sb.append(NEWLINE);
-                sb.append(topicName);
+                sb.append(NEWLINE)
+                    .append(topicName);
                 partition.forEach(p -> sb
                     .append(INDENTED_NEWLINE)
                     .append("partition[")
@@ -137,6 +153,24 @@ public class Reporter {
             sb.append(separator);
             sb.append(name + ": " + value);
         });
+        return sb.toString();
+    }
+
+    private String printAcls(Set<Acl> acls) {
+        StringBuilder sb = new StringBuilder();
+
+        acls.forEach(acl -> {
+            sb.append(NEWLINE).append("Resource type: ").append(acl.getResourceType())
+                .append(NEWLINE).append("Name: ").append(acl.getName())
+                .append(NEWLINE).append("Pattern type: "). append(acl.getPatternType());
+
+            acl.getPermissions().forEach(permission ->
+                sb.append(DOUBLE_INDENTED_NEWLINE).append("Principal: ").append(permission.getPrincipal())
+                    .append(DOUBLE_INDENTED_NEWLINE).append("Host: ").append(permission.getHost())
+                    .append(DOUBLE_INDENTED_NEWLINE).append("Operation: ").append(permission.getOperation())
+                    .append(DOUBLE_INDENTED_NEWLINE).append("Permission type: ").append(permission.getPermissionType()));
+        });
+
         return sb.toString();
     }
 
