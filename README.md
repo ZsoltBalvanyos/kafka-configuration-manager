@@ -13,15 +13,20 @@ If you want to see the changes only without applying them add the option `-p`.
 To use SSL protocol provide the location to your truststore by the `-t=/path/to/truststore` option.
 
 ### Running Docker 
-`docker run -e BOOTSTRAP_SERVER=kafka:9092 --mount type=bind,source=/path/to/config.yml,target=/config/configuration.yml zbalvanyos/kafka-configuration-manager:0.0.1`
+```
+docker run \
+	-e BOOTSTRAP_SERVER=kafka:9092 \
+	--mount type=bind,source=/path/to/config.yml,target=/config/configuration.yml \
+	zbalvanyos/kafka-configuration-manager:0.0.1 plan
+```
 
 ### Getting Started
 
 ##### Operations
 
-- describe: prints the current state of the cluster
-- plan: prints the difference between the current state of the cluster and the configuration file
-- apply: update the cluster according to the configuration file
+- `describe`: prints the current state of the cluster
+- `plan`: prints the difference between the current state of the cluster and the configuration file
+- `apply`: update the cluster according to the configuration file
 
 ##### Configuration file
 The following is an example of how the configuration file has to be structured:
