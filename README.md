@@ -8,8 +8,6 @@ The Kafka Configuration Manager is a configuration change management tool for Ka
 ### Running locally
 `./gradlew clean run --args="-b=localhost:9093 -c=/path/to/config.yml plan"`
 
-If you want to see the changes only without applying them add the option `-p`.
-
 To use SSL protocol provide the location to your truststore by the `-t=/path/to/truststore` option.
 
 ### Running Docker 
