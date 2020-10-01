@@ -2,7 +2,6 @@ package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
 import lombok.AllArgsConstructor;
 import org.apache.kafka.clients.admin.*;
-import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.*;
@@ -39,7 +38,7 @@ public class KafkaClient {
             .get()
             .forEach((resource, config) -> {
                 Map<String, String> brokerConfig = new HashMap<>();
-                config.entries().stream().map(c -> brokerConfig.put(c.name(), c.value()));
+                config.entries().forEach(c -> brokerConfig.put(c.name(), c.value()));
                 result.add(new Model.Broker(Integer.parseInt(resource.name()), brokerConfig));
             });
 
@@ -55,12 +54,6 @@ public class KafkaClient {
 
     protected Map<String, Set<Model.Partition>> getPartitions(Collection<String> topicNames) throws ExecutionException, InterruptedException {
         Map<String, Set<Model.Partition>> result = new HashMap<>();
-
-        DescribeTopicsResult d = admin.describeTopics(topicNames);
-
-        KafkaFuture<Map<String, TopicDescription>> x = admin
-            .describeTopics(topicNames)
-            .all();
 
         admin
             .describeTopics(topicNames)
@@ -124,22 +117,20 @@ public class KafkaClient {
             .map(topic -> new NewTopic(topic.getName(), topic.getPartitionCount(), topic.getReplicationFactor().map(Integer::shortValue)).configs(topic.getConfig()))
             .collect(Collectors.toSet());
 
-        log.info("Creating topics: {}", newTopics);
+        log.debug("Creating topics: {}", newTopics);
 
         admin.createTopics(newTopics).all().get();
     }
 
-    public void deleteTopics(Collection<Model.ExistingTopic> topics) throws ExecutionException, InterruptedException {
-        Set<String> topicsToDelete = topics.stream().map(Model.ExistingTopic::getName).collect(Collectors.toSet());
-        log.info("Deleting topics: {}", topics);
-        admin.deleteTopics(topicsToDelete).all().get();
+    public void deleteTopics(Collection<String> topics) throws ExecutionException, InterruptedException {
+        log.debug("Deleting topics: {}", topics);
+        admin.deleteTopics(topics).all().get();
     }
 
     public boolean noOngoingReassignment() throws ExecutionException, InterruptedException {
         Map<TopicPartition, PartitionReassignment> ongoingAssignments;
         int retries = 0;
         do {
-            System.out.println(retries);
             ongoingAssignments = admin.listPartitionReassignments().reassignments().get();
             if (!ongoingAssignments.isEmpty()) {
                 Thread.sleep(100 * (int) Math.pow(2, ++retries));
@@ -152,7 +143,7 @@ public class KafkaClient {
     public void updatePartitions(Map<String, Integer> updates) throws ExecutionException, InterruptedException {
         Map<String, NewPartitions> newPartitions = new HashMap<>();
         updates.forEach((topicName, partitions) -> newPartitions.put(topicName, NewPartitions.increaseTo(partitions)));
-        log.info("Increasing partition count: {}", newPartitions);
+        log.debug("Increasing partition count: {}", newPartitions);
         admin.createPartitions(newPartitions).all().get();
     }
 
@@ -163,13 +154,13 @@ public class KafkaClient {
                 new TopicPartition(topicName, partition.getPartitionNumber()),
                 Optional.of(new NewPartitionReassignment(partition.getReplicas()))))
         );
-        log.info("Modifying replication: {}", topicPartitions);
+        log.debug("Modifying replication: {}", topicPartitions);
         admin.alterPartitionReassignments(topicPartitions).all().get();
     }
 
     public void updateConfigOfTopics(Map<String, Map<String, Optional<String>>> updates) throws ExecutionException, InterruptedException {
         Map<ConfigResource, Collection<AlterConfigOp>> alterConfigRequest = getAlterConfigRequest(updates);
-        log.info("Modifying topic configurations: {}", alterConfigRequest);
+        log.debug("Modifying topic configurations: {}", alterConfigRequest);
         admin.incrementalAlterConfigs(alterConfigRequest).all().get();
     }
 
@@ -195,6 +186,10 @@ public class KafkaClient {
             );
         });
         return alterConfigRequest;
+    }
+
+    public void close() {
+        admin.close();
     }
 
 }

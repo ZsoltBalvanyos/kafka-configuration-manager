@@ -5,7 +5,6 @@ import static java.util.stream.Collectors.*;
 import com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
-import org.apache.kafka.common.utils.AppInfoParser;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -94,7 +93,7 @@ public class DeltaCalculator {
         return result;
     }
 
-    protected List<Integer> selectBrokersForReplication(List<Integer> currentState, int replicationFactor) {
+    public List<Integer> selectBrokersForReplication(List<Integer> currentState, int replicationFactor) {
         if (!allBrokers.stream().map(Broker::getId).collect(Collectors.toList()).containsAll(currentState)) {
             throw new RuntimeException(String.format("Invalid replication state - All Brokers: %s, Used Brokers: %s", allBrokers.toString(), currentState.toString()));
         }
@@ -159,7 +158,6 @@ public class DeltaCalculator {
     }
 
     private Integer getDefaultReplicationFactor() {
-        assert allBrokers != null;
         return allBrokers
             .stream()
             .map(Broker::getConfig)
@@ -171,7 +169,6 @@ public class DeltaCalculator {
     }
 
     private Integer getDefaultPartitionCount() {
-        assert allBrokers != null;
         return allBrokers
             .stream()
             .map(Broker::getConfig)

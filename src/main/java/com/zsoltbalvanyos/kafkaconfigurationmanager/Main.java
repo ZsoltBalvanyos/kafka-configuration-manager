@@ -1,7 +1,13 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
+import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
+import static java.util.stream.Collectors.toMap;
+import static picocli.CommandLine.*;
+
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.common.config.SecurityConfig;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.slf4j.Logger;
@@ -9,15 +15,14 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Option;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 
 public class Main implements Callable<Integer> {
 
-    // TODO: 13/09/2020 validation implementation
     // TODO: 13/09/2020 acl management
-    // TODO: 13/09/2020 rollback
 
     Logger log = LoggerFactory.getLogger(getClass().getName());
 
@@ -27,11 +32,10 @@ public class Main implements Callable<Integer> {
     @Option(names = { "-c", "--configurations"})
     String configurationsPath;
 
-    @Option(names = { "-p", "--plan"})
-    boolean plan;
-
     @Option(names = { "-t", "--truststore-location"})
     String truststoreLocation;
+
+    Reporter reporter = new Reporter();
 
     public static void main(String[] args) {
         System.exit(new CommandLine(new Main()).execute(args));
@@ -39,10 +43,79 @@ public class Main implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        describe();
+        return CommandLine.ExitCode.OK;
+    }
 
-        String action = plan ? "plan" : "update";
-        log.info("Starting to {} configuration of cluster {}", action, bootstrapServer);
+    @Command(name = "describe")
+    public void describe() throws ExecutionException, InterruptedException {
+        KafkaClient kafkaClient = getKafkaClient();
+        try {
+            reporter.print(kafkaClient.getExistingTopics());
+        } catch (Exception e) {
+            log.error(e.getMessage());
+            throw e;
+        } finally {
+            kafkaClient.close();
+        }
+    }
 
+    @Command(name = "plan")
+    public void plan() throws ExecutionException, InterruptedException, IOException {
+        KafkaClient kafkaClient = getKafkaClient();
+        try {
+            DeltaCalculator deltaCalculator = new DeltaCalculator(kafkaClient.getAllBrokers());
+            reporter.print(getExecutionPlan(kafkaClient, deltaCalculator));
+        } catch (Exception e) {
+            log.error(e.getMessage());
+            throw e;
+        } finally {
+            kafkaClient.close();
+        }
+    }
+
+    @Command(name = "apply")
+    public void apply() throws Exception {
+        KafkaClient kafkaClient = getKafkaClient();
+        try {
+            DeltaCalculator deltaCalculator = new DeltaCalculator(kafkaClient.getAllBrokers());
+            ExecutionPlan executionPlan = getExecutionPlan(kafkaClient, deltaCalculator);
+            reporter.print(executionPlan);
+            new Executor(kafkaClient, deltaCalculator).run(executionPlan);
+        } catch (Exception e) {
+            log.error(e.getMessage());
+            throw e;
+        } finally {
+            kafkaClient.close();
+        }
+    }
+
+    private ExecutionPlan getExecutionPlan(KafkaClient kafkaClient, DeltaCalculator deltaCalculator) throws ExecutionException, InterruptedException, IOException {
+        ConfigParser configParser = new ConfigParser(configurationsPath);
+        Set<Topic> requiredState = configParser.getRequiredState(configParser.getConfiguration());
+
+        Set<ExistingTopic> existingTopics = kafkaClient.getExistingTopics();
+
+        Map<String, Map<Integer, Integer>> originalPartitions = existingTopics
+            .stream()
+            .collect(toMap(ExistingTopic::getName, t -> t.getPartitions().stream().collect(toMap(Partition::getPartitionNumber, p -> p.getReplicas().size()))));
+
+        Map<String, Map<String, String>> originalConfigs = existingTopics
+            .stream()
+            .collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
+
+        return new ExecutionPlan(
+            originalConfigs,
+            originalPartitions,
+            deltaCalculator.replicationUpdate(existingTopics, requiredState),
+            deltaCalculator.partitionUpdate(existingTopics, requiredState),
+            deltaCalculator.topicConfigUpdate(existingTopics, requiredState),
+            deltaCalculator.topicsToCreate(existingTopics, requiredState),
+            deltaCalculator.topicsToDelete(existingTopics, requiredState)
+        );
+    }
+
+    private KafkaClient getKafkaClient() {
         Properties properties = new Properties();
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
 
@@ -51,71 +124,7 @@ public class Main implements Callable<Integer> {
             properties.put(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG, truststoreLocation);
         }
 
-        Admin adminClient = Admin.create(properties);
-
-        KafkaClient kafkaClient = new KafkaClient(adminClient);
-        ConfigParser configParser = new ConfigParser(configurationsPath);
-        DeltaCalculator deltaCalculator = new DeltaCalculator(kafkaClient.getAllBrokers());
-        Reporter reporter = new Reporter();
-
-        Set<Model.ExistingTopic> currentState = kafkaClient.getExistingTopics();
-        Set<Model.Topic> requiredState = configParser.getRequiredState(configParser.getConfiguration());
-
-        try {
-            process(kafkaClient, deltaCalculator, reporter, currentState, requiredState);
-        } catch (Exception e) {
-            e.printStackTrace();
-            log.error(e.getMessage());
-            return CommandLine.ExitCode.SOFTWARE;
-        }
-
-        return CommandLine.ExitCode.OK;
-    }
-
-    public void process(KafkaClient kafkaClient,
-                        DeltaCalculator deltaCalculator,
-                        Reporter reporter,
-                        Set<Model.ExistingTopic> currentState,
-                        Set<Model.Topic> requiredState) throws ExecutionException, InterruptedException {
-
-        log.info("Current state: {}", currentState);
-        log.info("Required state: {}", requiredState);
-
-        Map<String, Collection<Model.Partition>> replicationChanges = deltaCalculator.replicationUpdate(currentState, requiredState);
-        Map<String, Integer> partitionChanges = deltaCalculator.partitionUpdate(currentState, requiredState);
-        Map<String, Map<String, Optional<String>>> topicConfigurationChanges = deltaCalculator.topicConfigUpdate(currentState, requiredState);
-        Set<Model.Topic> topicsToCreate = deltaCalculator.topicsToCreate(currentState, requiredState);
-        Set<Model.ExistingTopic> topicsToDelete = deltaCalculator.topicsToDelete(currentState, requiredState);
-
-        reporter.printChanges(
-            replicationChanges,
-            partitionChanges,
-            topicConfigurationChanges,
-            topicsToCreate,
-            topicsToDelete
-        );
-
-        if (!plan) {
-
-            if (!replicationChanges.isEmpty() && kafkaClient.noOngoingReassignment()) {
-                kafkaClient.updateReplication(replicationChanges);
-            }
-
-            if (!partitionChanges.isEmpty() && kafkaClient.noOngoingReassignment()) {
-                kafkaClient.updatePartitions(partitionChanges);
-            }
-
-            if (!topicConfigurationChanges.isEmpty()) {
-                kafkaClient.updateConfigOfTopics(topicConfigurationChanges);
-            }
-
-            if (!topicsToCreate.isEmpty()) {
-                kafkaClient.createTopics(topicsToCreate);
-            }
-
-            if (!topicsToDelete.isEmpty()) {
-                kafkaClient.deleteTopics(topicsToDelete);
-            }
-        }
+        Admin admin = Admin.create(properties);
+        return new KafkaClient(admin);
     }
 }
