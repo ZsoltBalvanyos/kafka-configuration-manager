@@ -92,19 +92,12 @@ public class Executor {
 
         replicationChanges.forEach((topicName, replicationChange) -> {
 
-            Set<Model.Partition> rollbackTo = new HashSet<>();
-
-            originalPartitions
-                .get(topicName)
-                .forEach((partition, replication) ->
-                    rollbackTo.add(new Model.Partition(
-                        partition,
-                        deltaCalculator.selectBrokersForReplication(
-                            replicationChange
-                                .stream()
-                                .map(Model.Partition::getPartitionNumber)
-                                .collect(Collectors.toList()),
-                            replication))));
+            Set<Model.Partition> rollbackTo = replicationChange
+                .stream()
+                .map(partition -> new Model.Partition(
+                    partition.getPartitionNumber(),
+                    deltaCalculator.selectBrokersForReplication(partition.getReplicas(), originalPartitions.get(topicName).get(partition.getPartitionNumber()))))
+                .collect(Collectors.toSet());
 
             rollback.put(topicName, rollbackTo);
         });
