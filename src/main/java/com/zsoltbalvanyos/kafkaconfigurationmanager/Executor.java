@@ -18,7 +18,7 @@ public class Executor {
     final DeltaCalculator deltaCalculator;
     final List<Callable<String>> rollbacks = new ArrayList<>();
 
-    public void run(ExecutionPlan plan) throws Exception {
+    public void run(ExecutionPlan plan, Collection<Model.Broker> brokers) throws Exception {
 
         try {
             if (!plan.getAclsToDelete().isEmpty()) {
@@ -31,6 +31,12 @@ public class Executor {
                 //TODO rollback
                 kafkaClient.createAcls(plan.getAclsToCreate());
                 log.info("New ACLs have been added successfully");
+            }
+
+            if (!plan.getBrokerConfigurationChanges().isEmpty()) {
+                rollbacks.add(rollbackBrokerConfig(brokers, plan.getBrokerConfigurationChanges()));
+                kafkaClient.updateConfigOfBrokers(plan.getBrokerConfigurationChanges());
+                log.info("Broker configurations have been updated successfully.");
             }
 
             if (!plan.getTopicConfigurationChanges().isEmpty()) {
@@ -88,13 +94,34 @@ public class Executor {
 
         configChanges.forEach((topicName, config) -> {
             Map<String, Optional<String>> topicConfig = new HashMap<>();
-            originalConfigs.get(topicName).forEach((name, value) -> topicConfig.put(name, Optional.of(value)));
+            originalConfigs.get(topicName).forEach((name, value) -> topicConfig.put(name, Optional.ofNullable(value)));
             rollback.put(topicName, topicConfig);
         });
 
         return () -> {
             kafkaClient.updateConfigOfTopics(rollback);
-            return "Rolled back topic configuration";
+            return "Rolled back topic configuration changes";
+        };
+
+    }
+
+    public Callable<String> rollbackBrokerConfig(Collection<Model.Broker> brokers,
+                               Map<String, Map<String, Optional<String>>> configChanges) {
+
+        Map<String, Map<String, Model.BrokerConfig>> originalConfigs = new HashMap<>();
+        brokers.forEach(broker -> originalConfigs.put(String.valueOf(broker.getId()), broker.getConfig()));
+
+        Map<String, Map<String, Optional<String>>> rollback = new HashMap<>();
+
+        configChanges.forEach((brokerId, config) -> {
+            Map<String, Optional<String>> brokerConfig = new HashMap<>();
+            originalConfigs.get(brokerId).forEach((name, value) -> brokerConfig.put(name, Optional.ofNullable(value.getValue())));
+            rollback.put(brokerId, brokerConfig);
+        });
+
+        return () -> {
+            kafkaClient.updateConfigOfBrokers(rollback);
+            return "Rolled back broker configuration changes";
         };
 
     }

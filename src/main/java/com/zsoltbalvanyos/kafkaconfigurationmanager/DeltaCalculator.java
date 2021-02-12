@@ -132,6 +132,36 @@ public class DeltaCalculator {
         }
     }
 
+    public Map<String, Map<String, Optional<String>>> brokerConfigUpdate(Map<String, String> requiredState) {
+        Map<String, Map<String, Optional<String>>> result = new HashMap<>();
+
+        allBrokers.forEach(broker -> {
+            Map<String, Optional<String>> configToApply = new HashMap<>();
+
+            broker
+                .getConfig()
+                .values()
+                .stream()
+                .filter(config -> !requiredState.containsKey(config.getName()))
+                .filter(config -> !config.isDefault())
+                .filter(config -> !config.isReadOnly())
+                .forEach(config -> configToApply.put(config.getName(), Optional.empty()));
+
+            broker
+                .getConfig()
+                .values()
+                .stream()
+                .filter(config -> requiredState.containsKey(config.getName()))
+                .filter(config -> !config.isDefault())
+                .filter(config -> !requiredState.get(config.getName()).equals(config.getValue()))
+                .forEach(config -> configToApply.put(config.getName(), Optional.ofNullable(requiredState.get(config.getName()))));
+
+            result.put(String.valueOf(broker.getId()), configToApply);
+        });
+
+        return result;
+    }
+
     public Map<String, Map<String, Optional<String>>> topicConfigUpdate(Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
         Map<String, Map<String, Optional<String>>> result = new HashMap<>();
 
@@ -177,6 +207,7 @@ public class DeltaCalculator {
             .map(Broker::getConfig)
             .map(config -> config.get("default.replication.factor"))
             .filter(Objects::nonNull)
+            .map(BrokerConfig::getValue)
             .map(Integer::valueOf)
             .max(Integer::compareTo)
             .orElse(1);
@@ -188,6 +219,7 @@ public class DeltaCalculator {
             .map(Broker::getConfig)
             .map(config -> config.get("num.partitions"))
             .filter(Objects::nonNull)
+            .map(BrokerConfig::getValue)
             .map(Integer::valueOf)
             .max(Integer::compareTo)
             .orElse(1);

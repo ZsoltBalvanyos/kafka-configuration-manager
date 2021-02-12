@@ -39,12 +39,18 @@ public class KafkaClient {
             .all()
             .get()
             .forEach((resource, config) -> {
-                Map<String, String> brokerConfig = new HashMap<>();
-                config.entries().forEach(c -> brokerConfig.put(c.name(), c.value()));
+                Map<String, Model.BrokerConfig> brokerConfig = new HashMap<>();
+                config.entries().forEach(c -> brokerConfig.put(c.name(), new Model.BrokerConfig(c.name(), c.value(), c.isDefault(), c.isReadOnly())));
                 result.add(new Model.Broker(Integer.parseInt(resource.name()), brokerConfig));
             });
 
         return result;
+    }
+
+    public void updateConfigOfBrokers(Map<String, Map<String, Optional<String>>> updates) throws ExecutionException, InterruptedException {
+        Map<ConfigResource, Collection<AlterConfigOp>> alterConfigRequest = getAlterConfigRequest(updates, ConfigResource.Type.BROKER);
+        log.info("Modifying broker configurations: {}", alterConfigRequest);
+        admin.incrementalAlterConfigs(alterConfigRequest).all().get();
     }
 
     private Model.Acl toAcl(Map.Entry<ResourcePattern, List<AclBinding>> resourceToAcl) {
@@ -218,29 +224,29 @@ public class KafkaClient {
     }
 
     public void updateConfigOfTopics(Map<String, Map<String, Optional<String>>> updates) throws ExecutionException, InterruptedException {
-        Map<ConfigResource, Collection<AlterConfigOp>> alterConfigRequest = getAlterConfigRequest(updates);
+        Map<ConfigResource, Collection<AlterConfigOp>> alterConfigRequest = getAlterConfigRequest(updates, ConfigResource.Type.TOPIC);
         log.debug("Modifying topic configurations: {}", alterConfigRequest);
         admin.incrementalAlterConfigs(alterConfigRequest).all().get();
     }
 
-    protected Map<ConfigResource, Collection<AlterConfigOp>> getAlterConfigRequest(Map<String, Map<String, Optional<String>>> updates) {
+    protected Map<ConfigResource, Collection<AlterConfigOp>> getAlterConfigRequest(Map<String, Map<String, Optional<String>>> updates, ConfigResource.Type type) {
 
         Map<ConfigResource, Collection<AlterConfigOp>> alterConfigRequest = new HashMap<>();
 
-        updates.forEach((topicName, requiredConfigs) -> {
+        updates.forEach((name, requiredConfigs) -> {
 
             Set<AlterConfigOp> alterConfigOps = new HashSet<>();
 
-            requiredConfigs.forEach((name, config) ->
+            requiredConfigs.forEach((key, value) ->
                 alterConfigOps.add(
                     new AlterConfigOp(
-                        new ConfigEntry(name, config.orElse("")),
-                        config.map(v -> AlterConfigOp.OpType.SET).orElse(AlterConfigOp.OpType.DELETE)
+                        new ConfigEntry(key, value.orElse("")),
+                        value.map(v -> AlterConfigOp.OpType.SET).orElse(AlterConfigOp.OpType.DELETE)
                     ))
             );
 
             alterConfigRequest.put(
-                new ConfigResource(ConfigResource.Type.TOPIC, topicName),
+                new ConfigResource(type, name),
                 alterConfigOps
             );
         });

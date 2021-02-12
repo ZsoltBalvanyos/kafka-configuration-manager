@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import static java.util.stream.Collectors.*;
@@ -19,12 +20,31 @@ public class Reporter {
     final static private String INDENTED_NEWLINE = "\n\t";
     final static private String DOUBLE_INDENTED_NEWLINE = "\n\t\t";
 
-    public void print(Set<ExistingTopic> existingTopics) {
-        StringBuilder sb = new StringBuilder()
-            .append(NEWLINE)
-            .append("Current state of existing topics:");
+    public void print(Collection<ExistingTopic> existingTopics, Collection<Broker> brokers) {
+        StringBuilder sb = new StringBuilder();
 
-        existingTopics.stream().map(this::printTopic).forEach(sb::append);
+        if (brokers.isEmpty()) {
+            log.info("There is no change in broker configurations");
+        } else {
+            sb.append("Broker configuration changes:")
+                .append(NEWLINE);
+            brokers.forEach(broker -> {
+                sb.append("Broker ").append(broker.getId());
+                broker.getConfig().forEach((name, value) -> {
+                    sb.append(INDENTED_NEWLINE);
+                    sb.append(name + " -> " + value.getValue());
+                });
+                sb.append(NEWLINE);
+            });
+        }
+
+        if (existingTopics.isEmpty()) {
+            log.info("There is no existing topic yet");
+        } else {
+            sb.append(NEWLINE).append("Current state of existing topics:");
+            existingTopics.stream().map(this::printTopic).forEach(sb::append);
+            sb.append(NEWLINE);
+        }
 
         log.info(sb.toString());
     }
@@ -32,6 +52,20 @@ public class Reporter {
     public void print(ExecutionPlan plan) {
         StringBuilder sb = new StringBuilder();
         sb.append(NEWLINE);
+
+        if (!plan.getBrokerConfigurationChanges().isEmpty()) {
+            sb.append(NEWLINE)
+                .append("Broker configuration changes:")
+                .append(NEWLINE);
+            plan.getBrokerConfigurationChanges().forEach((brokerId, config) -> {
+                sb.append("Broker " + brokerId);
+                config.forEach((name, value) -> {
+                    sb.append(INDENTED_NEWLINE);
+                    sb.append(name + " -> " + value.orElse("default"));
+                });
+                sb.append(NEWLINE);
+            });
+        }
 
         if (!plan.getAclsToCreate().isEmpty()) {
             sb.append(NEWLINE)

@@ -46,7 +46,7 @@ public class Main implements Callable<Integer> {
     public void describe() throws ExecutionException, InterruptedException, IOException {
         KafkaClient kafkaClient = getKafkaClient();
         try {
-            reporter.print(kafkaClient.getExistingTopics());
+            reporter.print(kafkaClient.getExistingTopics(), kafkaClient.getAllBrokers());
         } catch (Exception e) {
             log.error(e.getMessage());
             throw e;
@@ -77,7 +77,7 @@ public class Main implements Callable<Integer> {
             DeltaCalculator deltaCalculator = new DeltaCalculator(allBrokers);
             ExecutionPlan executionPlan = getExecutionPlan(kafkaClient, deltaCalculator);
             reporter.print(executionPlan);
-            new Executor(kafkaClient, deltaCalculator).run(executionPlan);
+            new Executor(kafkaClient, deltaCalculator).run(executionPlan, allBrokers);
         } catch (Exception e) {
             log.error(e.getMessage());
             throw e;
@@ -112,6 +112,7 @@ public class Main implements Callable<Integer> {
             deltaCalculator.topicConfigUpdate(existingTopics, requiredState),
             deltaCalculator.topicsToCreate(existingTopics, requiredState),
             deltaCalculator.topicsToDelete(existingTopics, requiredState),
+            deltaCalculator.brokerConfigUpdate(configuration.getBrokerConfig()),
             deltaCalculator.aclsToCreate(currentAcls, requiredAcls),
             deltaCalculator.aclsToDelete(currentAcls, requiredAcls)
         );

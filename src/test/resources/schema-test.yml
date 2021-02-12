@@ -1,3 +1,7 @@
+brokerConfig:
+  log.cleaner.threads: 3
+  sasl.kerberos.service.name: kerberos
+
 topics:
   - name: topic-1
     configName: default
@@ -23,7 +27,7 @@ configSets:
 
 acls:
   - resourceType: TOPIC
-    name: "*"
+    name: "orders"
     patternType: PREFIXED
     permissions:
       - principal: User:alice

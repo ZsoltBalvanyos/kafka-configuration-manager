@@ -30,6 +30,49 @@ public class DeltaCalculatorTest {
     }
 
     @Test
+    public void findNewAcls() {
+        Set<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toSet());
+        Set<Acl> newAcls = random.objects(Acl.class, 5).collect(Collectors.toSet());
+        Set<Acl> merged = new HashSet<>(newAcls);
+        merged.addAll(existingAcls);
+
+        Set<Acl> result = deltaCalculator.aclsToCreate(existingAcls, merged);
+
+        assertThat(result).containsExactlyInAnyOrderElementsOf(newAcls);
+    }
+
+    @Test
+    public void whenNoNewAcl_returnEmptySet() {
+        Set<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toSet());
+
+        Set<Acl> result = deltaCalculator.aclsToCreate(existingAcls, existingAcls);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    public void findAclsToDelete() {
+        Set<Acl> requiredAcls = random.objects(Acl.class, 10).collect(Collectors.toSet());
+        Set<Acl> oldAcls = random.objects(Acl.class, 5).collect(Collectors.toSet());
+
+        Set<Acl> merged = new HashSet<>(oldAcls);
+        merged.addAll(requiredAcls);
+
+        Set<Acl> result = deltaCalculator.aclsToDelete(merged, requiredAcls);
+
+        assertThat(result).containsExactlyInAnyOrderElementsOf(oldAcls);
+    }
+
+    @Test
+    public void whenNoAclToDelete_returnEmptySet() {
+        Set<Acl> acls = random.objects(Acl.class, 10).collect(Collectors.toSet());
+
+        Set<Acl> result = deltaCalculator.aclsToDelete(acls, acls);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
     public void findNewTopics() {
         Set<Topic> existingTopics = random.objects(Topic.class, 10).collect(Collectors.toSet());
         Set<Topic> newTopics = random.objects(Topic.class, 5).collect(Collectors.toSet());
@@ -54,6 +97,8 @@ public class DeltaCalculatorTest {
     public void whenNoTopic_returnEmptySet() {
         assertThat(deltaCalculator.topicsToCreate(Set.of(), Set.of())).isEmpty();
         assertThat(deltaCalculator.topicsToDelete(Set.of(), Set.of())).isEmpty();
+        assertThat(deltaCalculator.aclsToCreate(Set.of(), Set.of())).isEmpty();
+        assertThat(deltaCalculator.aclsToDelete(Set.of(), Set.of())).isEmpty();
     }
 
     @Test

@@ -15,6 +15,11 @@ public class ConfigParserTest {
         Model.Configuration configuration = configParser.getConfiguration();
         Set<Model.Topic> result = configParser.getRequiredState(configuration);
 
+        assertThat(configuration.getBrokerConfig()).isEqualTo(Map.of(
+            "log.cleaner.threads", "3",
+            "sasl.kerberos.service.name", "kerberos"
+        ));
+
         assertThat(result).containsExactlyInAnyOrderElementsOf(Set.of(
             new Model.Topic(
                 "topic-1",
@@ -51,7 +56,7 @@ public class ConfigParserTest {
             Set.of(
                 new Model.Acl(
                     "TOPIC",
-                    "*",
+                    "orders",
                     "PREFIXED",
                     Set.of(
                         new Model.Permission("User:alice", "localhost", "ALL", "ALLOW"),

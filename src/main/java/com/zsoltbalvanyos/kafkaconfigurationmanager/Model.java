@@ -11,6 +11,8 @@ public class Model {
     @Value
     @With
     static public class Configuration {
+        @JsonSetter(nulls = Nulls.AS_EMPTY) Map<String, String> brokerConfig;
+        @JsonSetter(nulls = Nulls.AS_EMPTY) Set<Map<String, String>> perBrokerConfig;
         @JsonSetter(nulls = Nulls.AS_EMPTY) Set<Map<String, String>> topics;
         @JsonSetter(nulls = Nulls.AS_EMPTY) Set<Map<String, String>> configSets;
         @JsonSetter(nulls = Nulls.AS_EMPTY) Set<Acl> acls;
@@ -44,7 +46,16 @@ public class Model {
     @With
     static public class Broker {
         int id;
-        Map<String, String> config;
+        Map<String, BrokerConfig> config;
+    }
+
+    @Value
+    @With
+    static public class BrokerConfig {
+        String name;
+        String value;
+        boolean isDefault;
+        boolean isReadOnly;
     }
 
     @Value
@@ -57,6 +68,7 @@ public class Model {
         Map<String, Map<String, Optional<String>>> topicConfigurationChanges;
         Set<Topic> topicsToCreate;
         Set<ExistingTopic> topicsToDelete;
+        Map<String, Map<String, Optional<String>>> brokerConfigurationChanges;
         Set<Acl> aclsToCreate;
         Set<Acl> aclsToDelete;
     }
