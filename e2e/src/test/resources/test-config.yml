@@ -1,0 +1,16 @@
+topics:
+  - name: "orders.pizza.0"
+    configName: example-configs
+  - name: "orders.coffee.2"
+    configName: example-configs
+
+configSets:
+  - name: example-configs
+    partitionCount: 3
+    replicationFactor: 1
+    min.insync.replicas: 2
+    unclean.leader.election.enable: false
+    flush.messages: 100
+    retention.ms: -1
+    retention.bytes: -1
+    segment.bytes: 1073741824
