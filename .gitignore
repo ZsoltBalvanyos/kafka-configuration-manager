@@ -139,4 +139,4 @@ Temporary Items
 .apdisk
 
 
-/src/test/resources/manual-test*
+/application/src/test/resources/manual-test*

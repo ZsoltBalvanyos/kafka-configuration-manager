@@ -1,2 +1,4 @@
 rootProject.name = 'kafka-configuration-manager'
+include 'application'
+include 'e2e'
 
