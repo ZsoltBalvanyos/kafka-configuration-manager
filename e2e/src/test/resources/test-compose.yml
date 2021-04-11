@@ -7,16 +7,16 @@ x-kafka-defaults: &kafka-defaults
 
 x-kafka-environment-defaults: &kafka-environment-defaults
   KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:SASL_PLAINTEXT
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
   KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
-  KAFKA_OPTS: "-Djava.security.auth.login.config=/custom-config/kafka_server_jaas.conf"
-  KAFKA_SECURITY_PROTOCOL: SASL_PLAIN
-  KAFKA_SUPER_USERS: User:bob
+#  KAFKA_OPTS: "-Djava.security.auth.login.config=/custom-config/kafka_server_jaas.conf"
+#  KAFKA_SECURITY_PROTOCOL: SASL_PLAIN
+#  KAFKA_SUPER_USERS: User:bob
   KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-  KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
-  KAFKA_SECURITY_INTER_BROKER_PROTOCOL: PLAINTEXT
-  KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
-  KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+#  KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+#  KAFKA_SECURITY_INTER_BROKER_PROTOCOL: PLAINTEXT
+#  KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+#  KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
 
 x-kafka-volumes-defaults: &kafka-volumes
   volumes:
@@ -26,15 +26,16 @@ services:
 
   zookeeper:
     image: wurstmeister/zookeeper
+    container_name: zookeeper
     ports:
       - "2181:2181"
 
-  kafka:
+  kafka_1:
     <<: *kafka-defaults
     ports:
       - "9092:9092"
       - "9093:9093"
-#    container_name: kafka_1
+    container_name: kafka_1
     <<: *kafka-volumes
     environment:
       <<: *kafka-environment-defaults

@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 
-cd application || exit
-gradle clean build
-docker build -t kafka-configuration-manager .
+gradle :application:clean :application:build
+docker build -t kafka-configuration-manager application
 
-cd ../e2e || exit
-gradle clean build
+docker-compose -f e2e/src/test/resources/test-compose.yml up -d
+OUTPUT=$(docker logs kafka_1)
+
+while [[ "$OUTPUT" != *"[KafkaServer id=1] started"* ]]
+do
+  OUTPUT=$(docker logs kafka_1)
+done
+
+gradle :e2e:clean :e2e:build
+
+docker-compose -f e2e/src/test/resources/test-compose.yml down
 
