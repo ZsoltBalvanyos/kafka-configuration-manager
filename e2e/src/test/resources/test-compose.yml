@@ -27,6 +27,9 @@ services:
   zookeeper:
     image: wurstmeister/zookeeper
     container_name: zookeeper
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.4
     ports:
       - "2181:2181"
 
@@ -37,10 +40,13 @@ services:
       - "9093:9093"
     container_name: kafka_1
     <<: *kafka-volumes
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.5
     environment:
       <<: *kafka-environment-defaults
       KAFKA_BROKER_ID: 1
-      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka_1:9092,OUTSIDE://localhost:9093
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka_1:9092,OUTSIDE://127.0.0.1:9093
       KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9093
 #
 #  kafka_2:
@@ -68,3 +74,11 @@ services:
 #      KAFKA_BROKER_ID: 3
 #      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka_3:39092,OUTSIDE://localhost:39093
 #      KAFKA_LISTENERS: INSIDE://:39092,OUTSIDE://:39093
+
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.5.0.0/16
+          gateway: 10.5.0.1

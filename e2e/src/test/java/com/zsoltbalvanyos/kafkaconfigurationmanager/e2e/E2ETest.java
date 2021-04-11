@@ -19,6 +19,7 @@ import org.testcontainers.utility.DockerImageName;
 public class E2ETest {
 
   private final Logger log = LoggerFactory.getLogger(getClass().getName());
+  private final String kafkaEndpoint = "10.5.0.5:9093";
   private final Admin admin =
       Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9093"));
 
@@ -27,7 +28,7 @@ public class E2ETest {
 
     new GenericContainer<>(DockerImageName.parse("kafka-configuration-manager:latest"))
         .waitingFor(Wait.forLogMessage(".*(Kafka Configuration Manager exited).*", 1))
-        .withEnv(Map.of("BOOTSTRAP_SERVER", "localhost:9093"))
+        .withEnv(Map.of("BOOTSTRAP_SERVER", kafkaEndpoint))
         .withFileSystemBind(
             "./src/test/resources/plaintext.properties", "/properties/command-config.properties")
         .withFileSystemBind("./src/test/resources/test-config.yml", "/config/configuration.yml")

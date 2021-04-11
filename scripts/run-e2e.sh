@@ -12,6 +12,8 @@ do
 done
 
 gradle :e2e:clean :e2e:build
+RESULT=$?
 
 docker-compose -f e2e/src/test/resources/test-compose.yml down
 
+exit $RESULT
