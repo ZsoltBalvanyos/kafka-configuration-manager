@@ -24,7 +24,13 @@ public class E2ETest {
   @BeforeAll
   private static void setup() throws Exception {
     kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:5.4.3"));
-    kafka.start();
+    try {
+      kafka.start();
+    } catch (Exception e) {
+      System.out.println(e.getMessage());
+      e.printStackTrace();
+      throw e;
+    }
     admin =
         Admin.create(
             Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers()));

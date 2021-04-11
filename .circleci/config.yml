@@ -16,16 +16,6 @@ jobs:
       - setup_remote_docker:
           version: 19.03.13
 
-      - restore_cache:
-          keys:
-            - v1-dependencies-{{ checksum "build.gradle" }}
-            - v1-dependencies-
-
       - run: gradle dependencies
-
-      - save_cache:
-          paths:
-            - ~/.gradle
-          key: v1-dependencies-{{ checksum "build.gradle" }}
 
       - run: ./scripts/run-e2e.sh
