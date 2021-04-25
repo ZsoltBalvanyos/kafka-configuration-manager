@@ -18,7 +18,7 @@ import org.testcontainers.utility.DockerImageName;
 public class E2ETest {
 
   private final Logger log = LoggerFactory.getLogger(getClass().getName());
-  private final String kafkaEndpoint = "localhost:9093";
+  private final String kafkaEndpoint = "127.0.0.1:9093";
 
   @Test
   public void test() throws Exception {
