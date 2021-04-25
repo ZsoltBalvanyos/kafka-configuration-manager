@@ -2,10 +2,15 @@ package com.zsoltbalvanyos.kafkaconfigurationmanager.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.*;
+import java.io.FileReader;
+import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
-import org.apache.kafka.clients.admin.*;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.Config;
+import org.apache.kafka.clients.admin.TopicListing;
 import org.apache.kafka.common.config.ConfigResource;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -15,21 +20,30 @@ import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
-public class E2ETest {
+public class ACLTest {
 
   private final Logger log = LoggerFactory.getLogger(getClass().getName());
   private final String kafkaEndpoint = "127.0.0.1:9093";
-  private final Admin admin =
-      Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaEndpoint));
+  private Admin admin;
 
   @Test
   public void test() throws Exception {
+
+    Properties properties = new Properties();
+    properties.load(new FileReader("./src/test/resources/command-config.properties"));
+
+    properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaEndpoint);
+
+    admin = Admin.create(properties);
 
     new GenericContainer<>(DockerImageName.parse("kafka-configuration-manager:latest"))
         .waitingFor(Wait.forLogMessage(".*(Kafka Configuration Manager exited).*", 1))
         .withEnv("BOOTSTRAP_SERVER", kafkaEndpoint)
         .withFileSystemBind(
-            "./src/test/resources/plaintext.properties", "/properties/command-config.properties")
+            "./src/test/resources/command-config.properties",
+            "/properties/command-config.properties")
+        .withFileSystemBind(
+            "./src/test/resources/kafka_server_jaas.conf", "/config/kafka_server_jaas.conf")
         .withFileSystemBind("./src/test/resources/test-config.yml", "/config/configuration.yml")
         .withCommand("apply")
         .withLogConsumer(new Slf4jLogConsumer(log))
@@ -42,7 +56,9 @@ public class E2ETest {
             .collect(Collectors.toList());
 
     assertThat(topicNames).containsExactlyInAnyOrder("orders.pizza.0", "orders.coffee.2");
+
     assertThat(getConfigEntries("orders.pizza.0").get("flush.messages").value()).isEqualTo("100");
+
     assertThat(getConfigEntries("orders.pizza.0").get("unclean.leader.election.enable").value())
         .isEqualTo("false");
   }
