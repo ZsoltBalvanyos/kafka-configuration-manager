@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - checkout
-
+      - run: sudo apt-get update
+      - run: sudo apt-get install oracle-java11-installer-local
       - run: gradle dependencies
-
       - run: ./scripts/run-e2e.sh
