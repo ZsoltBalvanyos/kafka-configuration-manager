@@ -13,9 +13,6 @@ jobs:
     steps:
       - checkout
 
-      - setup_remote_docker:
-          version: 19.03.13
-
       - run: gradle dependencies
 
       - run: ./scripts/run-e2e.sh
