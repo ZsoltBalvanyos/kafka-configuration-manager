@@ -18,12 +18,12 @@ import org.testcontainers.utility.DockerImageName;
 public class E2ETest {
 
   private final Logger log = LoggerFactory.getLogger(getClass().getName());
-  private final String kafkaEndpoint = "10.5.0.5:9093";
+  private final String kafkaEndpoint = "localhost:9093";
 
   @Test
   public void test() throws Exception {
     Properties properties = new Properties();
-    properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9093");
+    properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaEndpoint);
     Admin admin = Admin.create(properties);
 
     new GenericContainer<>(DockerImageName.parse("kafka-configuration-manager:latest"))
@@ -53,6 +53,10 @@ public class E2ETest {
   private Config getConfigEntries(String topicName, Admin admin)
       throws ExecutionException, InterruptedException {
     ConfigResource configResource = new ConfigResource(ConfigResource.Type.TOPIC, topicName);
-    return admin.describeConfigs(Arrays.asList(configResource)).all().get().get(configResource);
+    return admin
+        .describeConfigs(Collections.singletonList(configResource))
+        .all()
+        .get()
+        .get(configResource);
   }
 }
