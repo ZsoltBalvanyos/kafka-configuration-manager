@@ -3,26 +3,28 @@ package com.zsoltbalvanyos.kafkaconfigurationmanager;
 import static java.util.stream.Collectors.*;
 
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Stream;
 import lombok.AllArgsConstructor;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.*;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.SecurityDisabledException;
 import org.apache.kafka.common.resource.PatternType;
 import org.apache.kafka.common.resource.ResourcePattern;
 import org.apache.kafka.common.resource.ResourcePatternFilter;
 import org.apache.kafka.common.resource.ResourceType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+@Slf4j
 @AllArgsConstructor
 public class KafkaClient {
 
-  final Logger log = LoggerFactory.getLogger(getClass().getName());
   private final Admin admin;
+  private final int ongoingAssignmentRetries;
 
   @SneakyThrows
   public Set<Model.Broker> getAllBrokers() {
@@ -79,23 +81,32 @@ public class KafkaClient {
 
   @SneakyThrows
   protected Set<Model.Acl> getAcls() {
-    return admin
-        .describeAcls(
-            new AclBindingFilter(
-                new ResourcePatternFilter(ResourceType.ANY, null, PatternType.ANY),
-                new AccessControlEntryFilter(null, null, AclOperation.ANY, AclPermissionType.ANY)))
-        .values()
-        .get()
-        .stream()
-        .collect(groupingBy(AclBinding::pattern))
-        .entrySet()
-        .stream()
-        .map(this::toAcl)
-        .collect(toSet());
+    try {
+      return admin
+          .describeAcls(
+              new AclBindingFilter(
+                  new ResourcePatternFilter(ResourceType.ANY, null, PatternType.ANY),
+                  new AccessControlEntryFilter(
+                      null, null, AclOperation.ANY, AclPermissionType.ANY)))
+          .values()
+          .get()
+          .stream()
+          .collect(groupingBy(AclBinding::pattern))
+          .entrySet()
+          .stream()
+          .map(this::toAcl)
+          .collect(toSet());
+    } catch (ExecutionException e) {
+      if (e.getCause() instanceof SecurityDisabledException) {
+        return Set.of();
+      } else {
+        throw e;
+      }
+    }
   }
 
   @SneakyThrows
-  protected void createAcls(Set<Model.Acl> acls) {
+  protected void createAcls(Collection<Model.Acl> acls) {
     Set<AclBinding> aclBindings = acls.stream().flatMap(this::toAclBinding).collect(toSet());
     admin.createAcls(aclBindings).all().get();
   }
@@ -117,7 +128,7 @@ public class KafkaClient {
   }
 
   @SneakyThrows
-  public void deleteAcls(Set<Model.Acl> acls) {
+  public void deleteAcls(Collection<Model.Acl> acls) {
     Set<AclBindingFilter> aclBindingFilters =
         acls.stream().flatMap(this::toAclBindingFilter).collect(toSet());
     admin.deleteAcls(aclBindingFilters).all().get();
@@ -140,8 +151,8 @@ public class KafkaClient {
   }
 
   @SneakyThrows
-  private Map<String, Set<Model.Partition>> getPartitions(Collection<String> topicNames) {
-    Map<String, Set<Model.Partition>> result = new HashMap<>();
+  private Map<String, List<Model.Partition>> getPartitions(Collection<String> topicNames) {
+    Map<String, List<Model.Partition>> result = new HashMap<>();
 
     admin
         .describeTopics(topicNames)
@@ -149,7 +160,7 @@ public class KafkaClient {
         .get()
         .forEach(
             (topicName, description) -> {
-              Set<Model.Partition> partitions =
+              List<Model.Partition> partitions =
                   description.partitions().stream()
                       .map(
                           partitionInfo ->
@@ -158,7 +169,7 @@ public class KafkaClient {
                                   partitionInfo.replicas().stream()
                                       .map(Node::id)
                                       .collect(toList())))
-                      .collect(toSet());
+                      .collect(toList());
               result.put(topicName, partitions);
             });
     return result;
@@ -187,13 +198,13 @@ public class KafkaClient {
   }
 
   @SneakyThrows
-  public Set<Model.ExistingTopic> getExistingTopics() {
+  public List<Model.ExistingTopic> getExistingTopics() {
 
     Collection<TopicListing> existingTopics = admin.listTopics().listings().get();
 
     Map<String, Map<String, String>> topicNameToConfig = getConfigs(existingTopics);
-    Map<String, Set<Model.Partition>> partitionMap =
-        getPartitions(existingTopics.stream().map(TopicListing::name).collect(toSet()));
+    Map<String, List<Model.Partition>> partitionMap =
+        getPartitions(existingTopics.stream().map(TopicListing::name).collect(toList()));
 
     return existingTopics.stream()
         .map(
@@ -210,12 +221,12 @@ public class KafkaClient {
                             () ->
                                 new RuntimeException(
                                     "Not found configuration of topic " + topic.name()))))
-        .collect(toSet());
+        .collect(toList());
   }
 
   @SneakyThrows
-  public void createTopics(Set<Model.Topic> topics) {
-    Set<NewTopic> newTopics = topics.stream().map(this::toNewTopic).collect(toSet());
+  public void createTopics(Collection<Model.Topic> topics) {
+    List<NewTopic> newTopics = topics.stream().map(this::toNewTopic).collect(toList());
     log.debug("Creating topics: {}", newTopics);
     admin.createTopics(newTopics).all().get();
   }
@@ -241,11 +252,11 @@ public class KafkaClient {
     do {
       ongoingAssignments = admin.listPartitionReassignments().reassignments().get();
       if (!ongoingAssignments.isEmpty()) {
-        Thread.sleep(100 * (int) Math.pow(2, retries++));
+        Thread.sleep(10L * (int) Math.pow(2, retries++));
       }
-    } while (!ongoingAssignments.isEmpty() && retries < 100);
+    } while (!ongoingAssignments.isEmpty() && retries < ongoingAssignmentRetries);
 
-    return true;
+    return retries != ongoingAssignmentRetries;
   }
 
   @SneakyThrows
@@ -259,7 +270,7 @@ public class KafkaClient {
   }
 
   @SneakyThrows
-  public void updateReplication(Map<String, Collection<Model.Partition>> updates) {
+  public void updateReplication(Map<String, List<Model.Partition>> updates) {
     Map<TopicPartition, Optional<NewPartitionReassignment>> topicPartitions = new HashMap<>();
     updates.forEach(
         (topicName, partitions) ->
