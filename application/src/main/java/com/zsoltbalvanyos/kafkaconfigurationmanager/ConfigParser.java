@@ -22,7 +22,7 @@ public class ConfigParser {
         .readValue(new File(pathToConfigs), Configuration.class);
   }
 
-  public Set<Topic> getRequiredState(Configuration configuration) {
+  public List<Topic> getRequiredState(Configuration configuration) {
 
     Map<String, Map<String, String>> configSetMap = new HashMap<>();
 
@@ -40,7 +40,7 @@ public class ConfigParser {
 
     return configuration.getTopics().stream()
         .map(t -> buildTopic(t, configSetMap))
-        .collect(Collectors.toSet());
+        .collect(Collectors.toList());
   }
 
   protected Topic buildTopic(

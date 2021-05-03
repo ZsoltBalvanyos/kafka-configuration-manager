@@ -16,79 +16,79 @@ import org.junit.Test;
 public class DeltaCalculatorTest {
 
   EasyRandom random = TestUtil.randomizer;
-  Set<Broker> allBrokers = createBrokers(12);
+  Collection<Broker> allBrokers = createBrokers(12);
   DeltaCalculator deltaCalculator = new DeltaCalculator(allBrokers);
 
-  private Set<Broker> createBrokers(int n) {
+  private List<Broker> createBrokers(int n) {
     return IntStream.range(0, n)
         .mapToObj(i -> new Broker(i + 1, Map.of()))
-        .collect(Collectors.toSet());
+        .collect(Collectors.toList());
   }
 
-  private Set<Broker> toBroker(Collection<Integer> n) {
-    return n.stream().map(i -> new Broker(i, Map.of())).collect(Collectors.toSet());
+  private List<Broker> toBroker(Collection<Integer> n) {
+    return n.stream().map(i -> new Broker(i, Map.of())).collect(Collectors.toList());
   }
 
   @Test
   public void findNewAcls() {
-    Set<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toSet());
-    Set<Acl> newAcls = random.objects(Acl.class, 5).collect(Collectors.toSet());
-    Set<Acl> merged = new HashSet<>(newAcls);
+    List<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toList());
+    List<Acl> newAcls = random.objects(Acl.class, 5).collect(Collectors.toList());
+    List<Acl> merged = new ArrayList<>(newAcls);
     merged.addAll(existingAcls);
 
-    Set<Acl> result = deltaCalculator.aclsToCreate(existingAcls, merged);
+    List<Acl> result = deltaCalculator.aclsToCreate(existingAcls, merged);
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(newAcls);
   }
 
   @Test
   public void whenNoNewAcl_returnEmptySet() {
-    Set<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toSet());
+    List<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toList());
 
-    Set<Acl> result = deltaCalculator.aclsToCreate(existingAcls, existingAcls);
+    List<Acl> result = deltaCalculator.aclsToCreate(existingAcls, existingAcls);
 
     assertThat(result).isEmpty();
   }
 
   @Test
   public void findAclsToDelete() {
-    Set<Acl> requiredAcls = random.objects(Acl.class, 10).collect(Collectors.toSet());
-    Set<Acl> oldAcls = random.objects(Acl.class, 5).collect(Collectors.toSet());
+    List<Acl> requiredAcls = random.objects(Acl.class, 10).collect(Collectors.toList());
+    List<Acl> oldAcls = random.objects(Acl.class, 5).collect(Collectors.toList());
 
-    Set<Acl> merged = new HashSet<>(oldAcls);
+    List<Acl> merged = new ArrayList<>(oldAcls);
     merged.addAll(requiredAcls);
 
-    Set<Acl> result = deltaCalculator.aclsToDelete(merged, requiredAcls);
+    List<Acl> result = deltaCalculator.aclsToDelete(merged, requiredAcls);
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(oldAcls);
   }
 
   @Test
   public void whenNoAclToDelete_returnEmptySet() {
-    Set<Acl> acls = random.objects(Acl.class, 10).collect(Collectors.toSet());
+    List<Acl> acls = random.objects(Acl.class, 10).collect(Collectors.toList());
 
-    Set<Acl> result = deltaCalculator.aclsToDelete(acls, acls);
+    List<Acl> result = deltaCalculator.aclsToDelete(acls, acls);
 
     assertThat(result).isEmpty();
   }
 
   @Test
   public void findNewTopics() {
-    Set<Topic> existingTopics = random.objects(Topic.class, 10).collect(Collectors.toSet());
-    Set<Topic> newTopics = random.objects(Topic.class, 5).collect(Collectors.toSet());
-    Set<Topic> merged = new HashSet<>(newTopics);
+    List<Topic> existingTopics = random.objects(Topic.class, 10).collect(Collectors.toList());
+    List<Topic> newTopics = random.objects(Topic.class, 5).collect(Collectors.toList());
+    List<Topic> merged = new ArrayList<>(newTopics);
     merged.addAll(existingTopics);
 
-    Set<Topic> result = deltaCalculator.topicsToCreate(toExistingAll(existingTopics), merged);
+    List<Topic> result = deltaCalculator.topicsToCreate(toExistingAll(existingTopics), merged);
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(newTopics);
   }
 
   @Test
   public void whenNoNewTopic_returnEmptySet() {
-    Set<Topic> existingTopics = random.objects(Topic.class, 10).collect(Collectors.toSet());
+    List<Topic> existingTopics = random.objects(Topic.class, 10).collect(Collectors.toList());
 
-    Set<Topic> result =
+    List<Topic> result =
         deltaCalculator.topicsToCreate(toExistingAll(existingTopics), existingTopics);
 
     assertThat(result).isEmpty();
@@ -96,32 +96,32 @@ public class DeltaCalculatorTest {
 
   @Test
   public void whenNoTopic_returnEmptySet() {
-    assertThat(deltaCalculator.topicsToCreate(Set.of(), Set.of())).isEmpty();
-    assertThat(deltaCalculator.topicsToDelete(Set.of(), Set.of())).isEmpty();
-    assertThat(deltaCalculator.aclsToCreate(Set.of(), Set.of())).isEmpty();
-    assertThat(deltaCalculator.aclsToDelete(Set.of(), Set.of())).isEmpty();
+    assertThat(deltaCalculator.topicsToCreate(List.of(), List.of())).isEmpty();
+    assertThat(deltaCalculator.topicsToDelete(List.of(), List.of())).isEmpty();
+    assertThat(deltaCalculator.aclsToCreate(List.of(), List.of())).isEmpty();
+    assertThat(deltaCalculator.aclsToDelete(List.of(), List.of())).isEmpty();
   }
 
   @Test
   public void findTopicsToDelete() {
-    Set<Topic> requiredTopics = random.objects(Topic.class, 10).collect(Collectors.toSet());
-    Set<ExistingTopic> oldTopics =
-        random.objects(ExistingTopic.class, 5).collect(Collectors.toSet());
+    List<Topic> requiredTopics = random.objects(Topic.class, 10).collect(Collectors.toList());
+    List<ExistingTopic> oldTopics =
+        random.objects(ExistingTopic.class, 5).collect(Collectors.toList());
 
-    Set<ExistingTopic> merged = new HashSet<>(oldTopics);
+    List<ExistingTopic> merged = new ArrayList<>(oldTopics);
     merged.addAll(toExistingAll(requiredTopics));
 
-    Set<ExistingTopic> result = deltaCalculator.topicsToDelete(merged, requiredTopics);
+    Collection<ExistingTopic> result = deltaCalculator.topicsToDelete(merged, requiredTopics);
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(oldTopics);
   }
 
   @Test
-  public void whenNoTopicToDelete_returnEmptySet() {
-    Set<Topic> topics = random.objects(Topic.class, 10).collect(Collectors.toSet());
-    Set<ExistingTopic> existingTopics = toExistingAll(topics);
+  public void whenNoTopicToDelete_returnEmptyList() {
+    List<Topic> topics = random.objects(Topic.class, 10).collect(Collectors.toList());
+    List<ExistingTopic> existingTopics = toExistingAll(topics);
 
-    Set<ExistingTopic> result = deltaCalculator.topicsToDelete(existingTopics, topics);
+    Collection<ExistingTopic> result = deltaCalculator.topicsToDelete(existingTopics, topics);
 
     assertThat(result).isEmpty();
   }
@@ -308,14 +308,14 @@ public class DeltaCalculatorTest {
         .thenReturn(List.of(1, 2));
     when(deltaCalculator.replicationUpdate(currentState, requiredState)).thenCallRealMethod();
 
-    Map<String, Collection<Partition>> result =
+    Map<String, List<Partition>> result =
         deltaCalculator.replicationUpdate(currentState, requiredState);
 
     assertThat(result)
         .containsExactlyInAnyOrderEntriesOf(
             Map.of(
-                "topic-1", Set.of(new Partition(1, List.of(3, 5, 6))),
-                "topic-3", Set.of(new Partition(0, List.of(1, 2)))));
+                "topic-1", List.of(new Partition(1, List.of(3, 5, 6))),
+                "topic-3", List.of(new Partition(0, List.of(1, 2)))));
   }
 
   @Test
@@ -344,12 +344,12 @@ public class DeltaCalculatorTest {
                     "key3", Optional.of("value3-new"))));
   }
 
-  private Set<ExistingTopic> toExistingAll(Set<Topic> topics) {
-    return topics.stream().map(this::toExisting).collect(Collectors.toSet());
+  private List<ExistingTopic> toExistingAll(List<Topic> topics) {
+    return topics.stream().map(this::toExisting).collect(Collectors.toList());
   }
 
   private ExistingTopic toExisting(Topic topic) {
-    Set<Partition> partitions =
+    List<Partition> partitions =
         IntStream.range(0, topic.getPartitionCount().orElse(1))
             .mapToObj(
                 no ->
@@ -358,7 +358,7 @@ public class DeltaCalculatorTest {
                         IntStream.range(0, topic.getReplicationFactor().orElse(1))
                             .mapToObj(Integer::valueOf)
                             .collect(Collectors.toList())))
-            .collect(Collectors.toSet());
+            .collect(Collectors.toList());
 
     return new ExistingTopic(topic.getName(), partitions, topic.getConfig());
   }

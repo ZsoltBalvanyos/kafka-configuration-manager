@@ -87,7 +87,7 @@ public class Executor {
     }
   }
 
-  public Callable<String> rollbackCreate(Set<Model.Topic> createdTopics) {
+  public Callable<String> rollbackCreate(Collection<Model.Topic> createdTopics) {
     return () -> {
       kafkaClient.deleteTopics(
           createdTopics.stream().map(Model.Topic::getName).collect(Collectors.toSet()));
@@ -143,12 +143,12 @@ public class Executor {
 
   public Callable<String> rollbackReplication(
       Map<String, Map<Integer, Integer>> originalPartitions,
-      Map<String, Collection<Model.Partition>> replicationChanges) {
-    Map<String, Collection<Model.Partition>> rollback = new HashMap<>();
+      Map<String, List<Model.Partition>> replicationChanges) {
+    Map<String, List<Model.Partition>> rollback = new HashMap<>();
 
     replicationChanges.forEach(
         (topicName, replicationChange) -> {
-          Set<Model.Partition> rollbackTo =
+          List<Model.Partition> rollbackTo =
               replicationChange.stream()
                   .map(
                       partition ->
@@ -159,7 +159,7 @@ public class Executor {
                                   originalPartitions
                                       .get(topicName)
                                       .get(partition.getPartitionNumber()))))
-                  .collect(Collectors.toSet());
+                  .collect(Collectors.toList());
 
           rollback.put(topicName, rollbackTo);
         });

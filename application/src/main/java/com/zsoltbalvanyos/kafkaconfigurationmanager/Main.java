@@ -6,9 +6,10 @@ import static picocli.CommandLine.*;
 
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -43,10 +44,12 @@ public class Main implements Callable<Integer> {
   }
 
   @Command(name = "describe")
-  public void describe() throws ExecutionException, InterruptedException, IOException {
+  public void describe() throws IOException {
     KafkaClient kafkaClient = getKafkaClient();
     try {
-      reporter.print(kafkaClient.getExistingTopics(), kafkaClient.getAllBrokers());
+      log.info(
+          reporter.print(
+              kafkaClient.getExistingTopics(), kafkaClient.getAllBrokers(), kafkaClient.getAcls()));
     } catch (Exception e) {
       log.error(e.getMessage());
       throw e;
@@ -56,11 +59,11 @@ public class Main implements Callable<Integer> {
   }
 
   @Command(name = "plan")
-  public void plan() throws ExecutionException, InterruptedException, IOException {
+  public void plan() throws IOException {
     KafkaClient kafkaClient = getKafkaClient();
     try {
       DeltaCalculator deltaCalculator = new DeltaCalculator(kafkaClient.getAllBrokers());
-      reporter.print(getExecutionPlan(kafkaClient, deltaCalculator));
+      log.info(reporter.print(getExecutionPlan(kafkaClient, deltaCalculator)));
     } catch (Exception e) {
       log.error(e.getMessage());
       throw e;
@@ -76,7 +79,7 @@ public class Main implements Callable<Integer> {
       Set<Broker> allBrokers = kafkaClient.getAllBrokers();
       DeltaCalculator deltaCalculator = new DeltaCalculator(allBrokers);
       ExecutionPlan executionPlan = getExecutionPlan(kafkaClient, deltaCalculator);
-      reporter.print(executionPlan);
+      log.info(reporter.print(executionPlan));
       new Executor(kafkaClient, deltaCalculator).run(executionPlan, allBrokers);
     } catch (Exception e) {
       log.error(e.getMessage());
@@ -87,12 +90,12 @@ public class Main implements Callable<Integer> {
   }
 
   private ExecutionPlan getExecutionPlan(KafkaClient kafkaClient, DeltaCalculator deltaCalculator)
-      throws ExecutionException, InterruptedException, IOException {
+      throws IOException {
     ConfigParser configParser = new ConfigParser(configurationsPath);
     Configuration configuration = configParser.getConfiguration();
-    Set<Topic> requiredState = configParser.getRequiredState(configuration);
+    Collection<Topic> requiredState = configParser.getRequiredState(configuration);
 
-    Set<ExistingTopic> existingTopics = kafkaClient.getExistingTopics();
+    Collection<ExistingTopic> existingTopics = kafkaClient.getExistingTopics();
 
     Map<String, Map<Integer, Integer>> originalPartitions =
         existingTopics.stream()
@@ -109,10 +112,7 @@ public class Main implements Callable<Integer> {
         existingTopics.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
 
     Set<Acl> requiredAcls = configuration.getAcls();
-    Set<Acl> currentAcls = Set.of();
-    if (!requiredAcls.isEmpty()) {
-      currentAcls = kafkaClient.getAcls();
-    }
+    Set<Acl> currentAcls = kafkaClient.getAcls();
 
     return new ExecutionPlan(
         originalConfigs,
@@ -129,12 +129,12 @@ public class Main implements Callable<Integer> {
 
   private KafkaClient getKafkaClient() throws IOException {
     Properties properties = new Properties();
-    if (Objects.nonNull(propertiesLocation)) {
+    if (Objects.nonNull(propertiesLocation) && Files.exists(Path.of(propertiesLocation))) {
       properties.load(new FileReader(propertiesLocation));
     }
     properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
 
     Admin admin = Admin.create(properties);
-    return new KafkaClient(admin);
+    return new KafkaClient(admin, 15);
   }
 }

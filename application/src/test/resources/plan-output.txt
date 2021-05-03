@@ -1,0 +1,119 @@
+
+
+Broker configuration changes:
+----------------------------
+Broker 1
+	key-1 -> new-value-1
+Broker 2
+	key-2 -> new-value-2
+	key-3 -> new-value-3
+	key-4 -> new-value-4
+
+
+ACLs to create:
+--------------
+Resource type: resource-type-1
+Name: name-1
+Pattern type: pattern-type-1
+		Principal: principal-1
+		Host: host-1
+		Operation: operation-1
+		Permission type: type-1
+		Principal: principal-2
+		Host: host-2
+		Operation: operation-2
+		Permission type: type-2
+Resource type: resource-type-6
+Name: name-6
+Pattern type: pattern-type-6
+		Principal: principal-6
+		Host: host-6
+		Operation: operation-6
+		Permission type: type-6
+		Principal: principal-2
+		Host: host-2
+		Operation: operation-2
+		Permission type: type-2
+
+
+ACLs to delete:
+--------------
+Resource type: resource-type-2
+Name: name-2
+Pattern type: pattern-type-2
+		Principal: principal-3
+		Host: host-3
+		Operation: operation-3
+		Permission type: type-3
+		Principal: principal-4
+		Host: host-4
+		Operation: operation-4
+		Permission type: type-4
+Resource type: resource-type-9
+Name: name-9
+Pattern type: pattern-type-9
+		Principal: principal-1
+		Host: host-1
+		Operation: operation-1
+		Permission type: type-1
+		Principal: principal-2
+		Host: host-2
+		Operation: operation-2
+		Permission type: type-2
+
+
+Changes in replication:
+----------------------
+topic-1
+	partition[0]: 1 -> 2
+topic-2
+	partition[2]: null -> 2
+
+
+Changes in partition count:
+--------------------------
+topic-1: 1 -> 20
+topic-2: 1 -> 30
+
+
+Changes in topic configuration:
+------------------------------
+topic-1
+	key-1: value-1 -> new-value-1
+topic-2
+	key-2: default -> new-value-2
+
+
+New topics to create:
+--------------------
+topic-3
+	Partition count: 3
+	Replication factor: 3
+	key-3: value-3
+topic-5
+	Partition count: 3
+	Replication factor: 3
+	key-3: value-3
+topic-8
+	Partition count: 3
+	Replication factor: 3
+	key-3: value-3
+
+
+New topics to delete:
+--------------------
+topic-4
+	key-3: value-3
+	Partitions:
+		Id: 2, replicas: [0,1]
+		Id: 4, replicas: [0,1,2]
+		Id: 6, replicas: [0,1,3]
+topic-14
+	key-3: value-3
+	Partitions:
+		Id: 4, replicas: [0,1]
+topic-54
+	key-3: value-3
+	Partitions:
+		Id: 4, replicas: [0,1]
+

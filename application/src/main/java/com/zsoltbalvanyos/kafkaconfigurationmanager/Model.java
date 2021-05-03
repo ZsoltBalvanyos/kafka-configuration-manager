@@ -31,7 +31,7 @@ public class Model {
   @With
   public static class ExistingTopic {
     String name;
-    Set<Partition> partitions;
+    Collection<Partition> partitions;
     Map<String, String> config;
   }
 
@@ -72,14 +72,14 @@ public class Model {
   public static class ExecutionPlan {
     Map<String, Map<String, String>> originalConfigs;
     Map<String, Map<Integer, Integer>> originalPartitions;
-    Map<String, Collection<Partition>> replicationChanges;
+    Map<String, List<Partition>> replicationChanges;
     Map<String, Integer> partitionChanges;
     Map<String, Map<String, Optional<String>>> topicConfigurationChanges;
-    Set<Topic> topicsToCreate;
-    Set<ExistingTopic> topicsToDelete;
+    List<Topic> topicsToCreate;
+    List<ExistingTopic> topicsToDelete;
     Map<String, Map<String, Optional<String>>> brokerConfigurationChanges;
-    Set<Acl> aclsToCreate;
-    Set<Acl> aclsToDelete;
+    List<Acl> aclsToCreate;
+    List<Acl> aclsToDelete;
   }
 
   @Value
@@ -88,7 +88,7 @@ public class Model {
     String resourceType;
     String name;
     String patternType;
-    Set<Permission> permissions;
+    Collection<Permission> permissions;
   }
 
   @Value

@@ -12,43 +12,43 @@ import lombok.Value;
 @RequiredArgsConstructor
 public class DeltaCalculator {
 
-  final Set<Broker> allBrokers;
+  final Collection<Broker> allBrokers;
 
-  public Set<Acl> aclsToCreate(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
-    return requiredAcls.stream().filter(acl -> !currentAcls.contains(acl)).collect(toSet());
+  public List<Acl> aclsToCreate(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
+    return requiredAcls.stream().filter(acl -> !currentAcls.contains(acl)).collect(toList());
   }
 
-  public Set<Acl> aclsToDelete(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
-    return currentAcls.stream().filter(acl -> !requiredAcls.contains(acl)).collect(toSet());
+  public List<Acl> aclsToDelete(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
+    return currentAcls.stream().filter(acl -> !requiredAcls.contains(acl)).collect(toList());
   }
 
-  public Set<Topic> topicsToCreate(
+  public List<Topic> topicsToCreate(
       Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
     return requiredState.stream()
         .filter(
             topic ->
                 !currentState.stream()
                     .map(ExistingTopic::getName)
-                    .collect(toSet())
+                    .collect(toList())
                     .contains(topic.getName()))
-        .collect(toSet());
+        .collect(toList());
   }
 
-  public Set<ExistingTopic> topicsToDelete(
+  public List<ExistingTopic> topicsToDelete(
       Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
     return currentState.stream()
         .filter(
             topic ->
                 !requiredState.stream()
                     .map(Topic::getName)
-                    .collect(toSet())
+                    .collect(toList())
                     .contains(topic.getName()))
-        .collect(toSet());
+        .collect(toList());
   }
 
   public Map<String, Integer> partitionUpdate(
       Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
-    Map<String, Set<Partition>> currentStateMap =
+    Map<String, Collection<Partition>> currentStateMap =
         currentState.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getPartitions));
 
     Map<String, Integer> result = new HashMap<>();
@@ -79,9 +79,9 @@ public class DeltaCalculator {
     return result;
   }
 
-  public Map<String, Collection<Partition>> replicationUpdate(
-      Set<ExistingTopic> currentState, Set<Topic> requiredState) {
-    Map<String, Collection<Partition>> result = new HashMap<>();
+  public Map<String, List<Partition>> replicationUpdate(
+      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
+    Map<String, List<Partition>> result = new HashMap<>();
 
     Map<String, Map<Integer, List<Integer>>> currentPartitions =
         currentState.stream()
@@ -97,7 +97,7 @@ public class DeltaCalculator {
         .filter(topic -> alreadyExists(currentState, topic))
         .forEach(
             topic -> {
-              Set<Partition> partitions =
+              List<Partition> partitions =
                   IntStream.range(0, currentPartitions.get(topic.getName()).size())
                       .filter(
                           partition ->
@@ -114,7 +114,7 @@ public class DeltaCalculator {
                                       topic
                                           .getReplicationFactor()
                                           .orElseGet(this::getDefaultReplicationFactor))))
-                      .collect(Collectors.toSet());
+                      .collect(Collectors.toList());
 
               if (!partitions.isEmpty()) {
                 result.put(topic.getName(), partitions);
@@ -136,7 +136,7 @@ public class DeltaCalculator {
               allBrokers.toString(), currentState.toString()));
     }
     if (replicationFactor < 1) {
-      throw new RuntimeException(String.format("Replication factor must be greater than 0"));
+      throw new RuntimeException("Replication factor must be greater than 0");
     }
     if (replicationFactor > allBrokers.size()) {
       throw new RuntimeException(
@@ -215,7 +215,7 @@ public class DeltaCalculator {
                     requiredConfig.get(topic.getName())))
         .forEach(
             configUpdate -> {
-              Set<String> configNames = new HashSet<>();
+              List<String> configNames = new ArrayList<>();
               configNames.addAll(configUpdate.oldConfig.keySet());
               configNames.addAll(configUpdate.newConfig.keySet());
 
@@ -244,7 +244,7 @@ public class DeltaCalculator {
   private boolean alreadyExists(Collection<ExistingTopic> existingTopics, Topic topic) {
     return existingTopics.stream()
         .map(ExistingTopic::getName)
-        .collect(toSet())
+        .collect(toList())
         .contains(topic.getName());
   }
 

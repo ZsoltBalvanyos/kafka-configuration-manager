@@ -12,7 +12,7 @@ public class ConfigParserTest {
   @Test
   public void configFileDeserializableToConfigurationModel() throws IOException {
     Model.Configuration configuration = configParser.getConfiguration();
-    Set<Model.Topic> result = configParser.getRequiredState(configuration);
+    List<Model.Topic> result = configParser.getRequiredState(configuration);
 
     assertThat(configuration.getBrokerConfig())
         .isEqualTo(
@@ -22,7 +22,7 @@ public class ConfigParserTest {
 
     assertThat(result)
         .containsExactlyInAnyOrderElementsOf(
-            Set.of(
+            List.of(
                 new Model.Topic(
                     "topic-1",
                     Optional.of(2),
@@ -49,12 +49,12 @@ public class ConfigParserTest {
 
     assertThat(configuration.getAcls())
         .containsExactlyInAnyOrderElementsOf(
-            Set.of(
+            List.of(
                 new Model.Acl(
                     "TOPIC",
                     "orders",
                     "PREFIXED",
-                    Set.of(
+                    List.of(
                         new Model.Permission("User:alice", "localhost", "ALL", "ALLOW"),
                         new Model.Permission("User:bob", "localhost", "ALL", "ALLOW")))));
   }
