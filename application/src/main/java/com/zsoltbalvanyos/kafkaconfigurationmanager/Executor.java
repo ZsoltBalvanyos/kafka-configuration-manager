@@ -58,7 +58,10 @@ public class Executor {
         log.info("Replication factors have been updated successfully.");
       }
 
-      if (!plan.getPartitionChanges().isEmpty() && kafkaClient.noOngoingReassignment()) {
+      if (!plan.getPartitionChanges().isEmpty()) {
+        if (kafkaClient.ongoingReassignment())
+          throw new RuntimeException(
+              "Failed to update partition count due to ongoing partition reassignment");
         kafkaClient.updatePartitions(plan.getPartitionChanges());
         log.info("Partition counts have been updated successfully.");
       }

@@ -246,7 +246,7 @@ public class KafkaClient {
   }
 
   @SneakyThrows
-  public boolean noOngoingReassignment() {
+  public boolean ongoingReassignment() {
     Map<TopicPartition, PartitionReassignment> ongoingAssignments;
     int retries = 0;
     do {
@@ -256,7 +256,7 @@ public class KafkaClient {
       }
     } while (!ongoingAssignments.isEmpty() && retries < ongoingAssignmentRetries);
 
-    return retries != ongoingAssignmentRetries;
+    return retries == ongoingAssignmentRetries;
   }
 
   @SneakyThrows

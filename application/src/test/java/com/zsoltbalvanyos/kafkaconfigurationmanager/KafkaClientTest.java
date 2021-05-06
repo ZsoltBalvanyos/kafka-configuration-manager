@@ -298,7 +298,7 @@ public class KafkaClientTest {
             listPartitionReassignmentsResult,
             listPartitionReassignmentsResult,
             listPartitionReassignmentsResult);
-    assertThat(kafkaClient.noOngoingReassignment()).isTrue();
+    assertThat(kafkaClient.ongoingReassignment()).isFalse();
     verify(admin, times(3)).listPartitionReassignments();
   }
 
@@ -313,7 +313,7 @@ public class KafkaClientTest {
                     new TopicPartition("topic-1", 0),
                     new PartitionReassignment(List.of(1), List.of(2), List.of(3)))));
     when(admin.listPartitionReassignments()).thenReturn(listPartitionReassignmentsResult);
-    assertThat(kafkaClient.noOngoingReassignment()).isFalse();
+    assertThat(kafkaClient.ongoingReassignment()).isTrue();
     verify(admin, times(5)).listPartitionReassignments();
   }
 }

@@ -25,25 +25,19 @@ public class DeltaCalculator {
   public List<Topic> topicsToCreate(
       Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
     return requiredState.stream()
-        .filter(
-            topic ->
-                !currentState.stream()
-                    .map(ExistingTopic::getName)
-                    .collect(toList())
-                    .contains(topic.getName()))
+        .filter(topic -> notContains(currentState, topic.getName()))
         .collect(toList());
   }
 
   public List<ExistingTopic> topicsToDelete(
       Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
     return currentState.stream()
-        .filter(
-            topic ->
-                !requiredState.stream()
-                    .map(Topic::getName)
-                    .collect(toList())
-                    .contains(topic.getName()))
+        .filter(topic -> notContains(requiredState, topic.getName()))
         .collect(toList());
+  }
+
+  private boolean notContains(Collection<? extends Named> topics, String topicName) {
+    return !topics.stream().map(Named::getName).collect(toList()).contains(topicName);
   }
 
   public Map<String, Integer> partitionUpdate(
@@ -124,6 +118,51 @@ public class DeltaCalculator {
     return result;
   }
 
+  public Map<String, Map<String, Optional<String>>> topicConfigUpdate(
+      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
+    Map<String, Map<String, Optional<String>>> result = new HashMap<>();
+
+    Map<String, Map<String, String>> currentConfig =
+        currentState.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
+    Map<String, Map<String, String>> requiredConfig =
+        requiredState.stream().collect(toMap(Topic::getName, Topic::getConfig));
+
+    requiredState.stream()
+        .filter(topic -> alreadyExists(currentState, topic))
+        .map(
+            topic ->
+                new ConfigUpdate(
+                    topic.getName(),
+                    currentConfig.get(topic.getName()),
+                    requiredConfig.get(topic.getName())))
+        .forEach(
+            configUpdate -> {
+              List<String> configNames = new ArrayList<>();
+              configNames.addAll(configUpdate.oldConfig.keySet());
+              configNames.addAll(configUpdate.newConfig.keySet());
+
+              Map<String, Optional<String>> configToApply = new HashMap<>();
+              configNames.forEach(
+                  configName -> {
+                    if (configUpdate.oldConfig.containsKey(configName)
+                        && !configUpdate.newConfig.containsKey(configName)) {
+                      configToApply.put(configName, Optional.empty());
+                    } else if (!configUpdate
+                        .oldConfig
+                        .getOrDefault(configName, UUID.randomUUID().toString())
+                        .equals(configUpdate.newConfig.get(configName))) {
+                      configToApply.put(
+                          configName, Optional.ofNullable(configUpdate.newConfig.get(configName)));
+                    }
+                  });
+              if (!configToApply.isEmpty()) {
+                result.put(configUpdate.topicName, configToApply);
+              }
+            });
+
+    return result;
+  }
+
   public List<Integer> selectBrokersForReplication(
       List<Integer> currentState, int replicationFactor) {
     if (!allBrokers.stream()
@@ -192,51 +231,6 @@ public class DeltaCalculator {
 
           result.put(String.valueOf(broker.getId()), configToApply);
         });
-
-    return result;
-  }
-
-  public Map<String, Map<String, Optional<String>>> topicConfigUpdate(
-      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
-    Map<String, Map<String, Optional<String>>> result = new HashMap<>();
-
-    Map<String, Map<String, String>> currentConfig =
-        currentState.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
-    Map<String, Map<String, String>> requiredConfig =
-        requiredState.stream().collect(toMap(Topic::getName, Topic::getConfig));
-
-    requiredState.stream()
-        .filter(topic -> alreadyExists(currentState, topic))
-        .map(
-            topic ->
-                new ConfigUpdate(
-                    topic.getName(),
-                    currentConfig.get(topic.getName()),
-                    requiredConfig.get(topic.getName())))
-        .forEach(
-            configUpdate -> {
-              List<String> configNames = new ArrayList<>();
-              configNames.addAll(configUpdate.oldConfig.keySet());
-              configNames.addAll(configUpdate.newConfig.keySet());
-
-              Map<String, Optional<String>> configToApply = new HashMap<>();
-              configNames.forEach(
-                  configName -> {
-                    if (configUpdate.oldConfig.containsKey(configName)
-                        && !configUpdate.newConfig.containsKey(configName)) {
-                      configToApply.put(configName, Optional.empty());
-                    } else if (!configUpdate
-                        .oldConfig
-                        .getOrDefault(configName, UUID.randomUUID().toString())
-                        .equals(configUpdate.newConfig.get(configName))) {
-                      configToApply.put(
-                          configName, Optional.ofNullable(configUpdate.newConfig.get(configName)));
-                    }
-                  });
-              if (!configToApply.isEmpty()) {
-                result.put(configUpdate.topicName, configToApply);
-              }
-            });
 
     return result;
   }

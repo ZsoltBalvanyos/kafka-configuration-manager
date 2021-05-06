@@ -27,9 +27,13 @@ public class Model {
     Set<Acl> acls;
   }
 
+  public interface Named {
+    String getName();
+  }
+
   @Value
   @With
-  public static class ExistingTopic {
+  public static class ExistingTopic implements Named {
     String name;
     Collection<Partition> partitions;
     Map<String, String> config;
@@ -37,7 +41,7 @@ public class Model {
 
   @Value
   @With
-  public static class Topic {
+  public static class Topic implements Named {
     String name;
     Optional<Integer> partitionCount;
     Optional<Integer> replicationFactor;
