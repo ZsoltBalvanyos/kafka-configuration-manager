@@ -36,6 +36,7 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:' + jacksonVersion
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:' + jacksonVersion
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:' + jacksonVersion
+    implementation group: 'io.vavr', name: 'vavr', version: '0.9.0'
 
     implementation 'org.slf4j:slf4j-log4j12:1.7.30'
 

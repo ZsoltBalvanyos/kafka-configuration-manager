@@ -12,43 +12,47 @@ import lombok.Value;
 @RequiredArgsConstructor
 public class DeltaCalculator {
 
-  final Collection<Broker> allBrokers;
+  final CurrentState currentState;
+  final RequiredState requiredState;
 
-  public List<Acl> aclsToCreate(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
-    return requiredAcls.stream().filter(acl -> !currentAcls.contains(acl)).collect(toList());
-  }
-
-  public List<Acl> aclsToDelete(Collection<Acl> currentAcls, Collection<Acl> requiredAcls) {
-    return currentAcls.stream().filter(acl -> !requiredAcls.contains(acl)).collect(toList());
-  }
-
-  public List<Topic> topicsToCreate(
-      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
-    return requiredState.stream()
-        .filter(topic -> notContains(currentState, topic.getName()))
+  public List<Acl> aclsToCreate() {
+    return requiredState.getAcls().stream()
+        .filter(acl -> !currentState.getAcls().contains(acl))
         .collect(toList());
   }
 
-  public List<ExistingTopic> topicsToDelete(
-      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
-    return currentState.stream()
-        .filter(topic -> notContains(requiredState, topic.getName()))
+  public List<Acl> aclsToDelete() {
+    return currentState.getAcls().stream()
+        .filter(acl -> !requiredState.getAcls().contains(acl))
         .collect(toList());
   }
 
-  private boolean notContains(Collection<? extends Named> topics, String topicName) {
-    return !topics.stream().map(Named::getName).collect(toList()).contains(topicName);
+  public List<RequiredTopic> topicsToCreate() {
+    return requiredState.getTopics().stream()
+        .filter(topic -> notContains(currentState.getTopics(), topic.getName()))
+        .collect(toList());
   }
 
-  public Map<String, Integer> partitionUpdate(
-      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
-    Map<String, Collection<Partition>> currentStateMap =
-        currentState.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getPartitions));
+  public List<ExistingTopic> topicsToDelete() {
+    return currentState.getTopics().stream()
+        .filter(topic -> notContains(requiredState.getTopics(), topic.getName()))
+        .collect(toList());
+  }
 
-    Map<String, Integer> result = new HashMap<>();
+  private boolean notContains(Collection<? extends Identified> topics, Id<?> topicName) {
+    return !topics.stream().map(Identified::getName).collect(toList()).contains(topicName);
+  }
 
-    requiredState.stream()
-        .filter(topic -> alreadyExists(currentState, topic))
+  public Map<TopicName, Integer> partitionUpdate() {
+
+    var currentStateMap =
+        currentState.getTopics().stream()
+            .collect(toMap(ExistingTopic::getName, ExistingTopic::getPartitions));
+
+    Map<TopicName, Integer> result = new HashMap<>();
+
+    requiredState.getTopics().stream()
+        .filter(topic -> alreadyExists(currentState.getTopics(), topic))
         .forEach(
             topic ->
                 topic
@@ -73,38 +77,37 @@ public class DeltaCalculator {
     return result;
   }
 
-  public Map<String, List<Partition>> replicationUpdate(
-      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
-    Map<String, List<Partition>> result = new HashMap<>();
+  public Map<TopicName, List<Partition>> replicationUpdate() {
+    Map<TopicName, List<Partition>> result = new HashMap<>();
 
-    Map<String, Map<Integer, List<Integer>>> currentPartitions =
-        currentState.stream()
-            .collect(
-                toMap(
-                    ExistingTopic::getName,
-                    e ->
-                        e.getPartitions().stream()
-                            .collect(
-                                toMap(Partition::getPartitionNumber, Partition::getReplicas))));
-
-    requiredState.stream()
-        .filter(topic -> alreadyExists(currentState, topic))
+    requiredState.getTopics().stream()
+        .filter(topic -> alreadyExists(currentState.getTopics(), topic))
         .forEach(
             topic -> {
               List<Partition> partitions =
-                  IntStream.range(0, currentPartitions.get(topic.getName()).size())
+                  IntStream.range(
+                          0, currentState.getTopicMap().get(topic.getName()).getPartitions().size())
                       .filter(
                           partition ->
-                              currentPartitions.get(topic.getName()).get(partition).size()
+                              currentState
+                                      .getTopicMap()
+                                      .get(topic.getName())
+                                      .getPartitions()
+                                      .get(PartitionNumber.of(partition))
+                                      .size()
                                   != topic
                                       .getReplicationFactor()
                                       .orElseGet(this::getDefaultReplicationFactor))
                       .mapToObj(
                           partition ->
                               new Partition(
-                                  partition,
+                                  PartitionNumber.of(partition),
                                   selectBrokersForReplication(
-                                      currentPartitions.get(topic.getName()).get(partition),
+                                      currentState
+                                          .getTopicMap()
+                                          .get(topic.getName())
+                                          .getPartitions()
+                                          .get(PartitionNumber.of(partition)),
                                       topic
                                           .getReplicationFactor()
                                           .orElseGet(this::getDefaultReplicationFactor))))
@@ -118,17 +121,19 @@ public class DeltaCalculator {
     return result;
   }
 
-  public Map<String, Map<String, Optional<String>>> topicConfigUpdate(
-      Collection<ExistingTopic> currentState, Collection<Topic> requiredState) {
-    Map<String, Map<String, Optional<String>>> result = new HashMap<>();
+  public Map<TopicName, Map<String, Optional<String>>> topicConfigUpdate() {
+    Map<TopicName, Map<String, Optional<String>>> result = new HashMap<>();
 
-    Map<String, Map<String, String>> currentConfig =
-        currentState.stream().collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
-    Map<String, Map<String, String>> requiredConfig =
-        requiredState.stream().collect(toMap(Topic::getName, Topic::getConfig));
+    Map<TopicName, Map<String, String>> currentConfig =
+        currentState.getTopics().stream()
+            .collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
 
-    requiredState.stream()
-        .filter(topic -> alreadyExists(currentState, topic))
+    Map<TopicName, Map<String, String>> requiredConfig =
+        requiredState.getTopics().stream()
+            .collect(toMap(RequiredTopic::getName, RequiredTopic::getConfig));
+
+    requiredState.getTopics().stream()
+        .filter(topic -> alreadyExists(currentState.getTopics(), topic))
         .map(
             topic ->
                 new ConfigUpdate(
@@ -163,16 +168,62 @@ public class DeltaCalculator {
     return result;
   }
 
+  public Map<BrokerId, Map<String, Optional<String>>> brokerConfigUpdate() {
+    Map<BrokerId, Map<String, Optional<String>>> result = new HashMap<>();
+
+    var requiredBrokerConfig = requiredState.getBrokers();
+
+    currentState
+        .getBrokers()
+        .forEach(
+            broker -> {
+              Map<String, Optional<String>> configToApply = new HashMap<>();
+
+              /*
+               * Reset config value to the default if the config has been removed from yaml file
+               */
+              broker.getConfig().values().stream()
+                  .filter(config -> !requiredBrokerConfig.containsKey(config.getName()))
+                  .filter(config -> !config.isDefault())
+                  .filter(config -> !config.isReadOnly())
+                  .forEach(config -> configToApply.put(config.getName(), Optional.empty()));
+
+              /*
+               * Update config values
+               */
+              broker.getConfig().values().stream()
+                  .filter(config -> requiredBrokerConfig.containsKey(config.getName()))
+                  .filter(config -> !config.isDefault())
+                  .filter(
+                      config ->
+                          !requiredBrokerConfig.get(config.getName()).equals(config.getValue()))
+                  .forEach(
+                      config ->
+                          configToApply.put(
+                              config.getName(),
+                              Optional.ofNullable(requiredBrokerConfig.get(config.getName()))));
+
+              result.put(broker.getId(), configToApply);
+            });
+
+    return result;
+  }
+
   public List<Integer> selectBrokersForReplication(
-      List<Integer> currentState, int replicationFactor) {
-    if (!allBrokers.stream()
-        .map(Broker::getId)
-        .collect(Collectors.toList())
-        .containsAll(currentState)) {
+      Collection<Integer> utilizedBrokers, int replicationFactor) {
+
+    var allBrokers =
+        currentState.getBrokers().stream()
+            .map(Broker::getId)
+            .map(Id::get)
+            .map(Integer::valueOf)
+            .collect(toList());
+
+    if (!allBrokers.containsAll(utilizedBrokers)) {
       throw new RuntimeException(
           String.format(
-              "Invalid replication state - All Brokers: %s, Used Brokers: %s",
-              allBrokers.toString(), currentState.toString()));
+              "Invalid replication state - Available Brokers: %s, Used Brokers: %s",
+              allBrokers.toString(), utilizedBrokers.toString()));
     }
     if (replicationFactor < 1) {
       throw new RuntimeException("Replication factor must be greater than 0");
@@ -184,66 +235,31 @@ public class DeltaCalculator {
               replicationFactor, allBrokers.size()));
     }
 
-    if (replicationFactor > currentState.size()) {
-      List<Integer> availableBrokers =
-          allBrokers.stream().map(Broker::getId).collect(Collectors.toList());
-      availableBrokers.removeAll(currentState);
+    if (replicationFactor > utilizedBrokers.size()) {
+      List<Integer> availableBrokers = new ArrayList<>(allBrokers);
+      availableBrokers.removeAll(utilizedBrokers);
       Collections.shuffle(availableBrokers);
-      List<Integer> result = availableBrokers.subList(0, replicationFactor - currentState.size());
-      result.addAll(currentState);
+      List<Integer> result =
+          availableBrokers.subList(0, replicationFactor - utilizedBrokers.size());
+      result.addAll(utilizedBrokers);
       return result;
     } else {
-      List<Integer> currentStateMutable = new ArrayList<>(currentState);
+      List<Integer> currentStateMutable = new ArrayList<>(utilizedBrokers);
       Collections.shuffle(currentStateMutable);
       return currentStateMutable.subList(0, replicationFactor);
     }
   }
 
-  public Map<String, Map<String, Optional<String>>> brokerConfigUpdate(
-      Map<String, String> requiredState) {
-    Map<String, Map<String, Optional<String>>> result = new HashMap<>();
-
-    allBrokers.forEach(
-        broker -> {
-          Map<String, Optional<String>> configToApply = new HashMap<>();
-
-          /*
-           * Reset config value to the default if the config has been removed from yaml file
-           */
-          broker.getConfig().values().stream()
-              .filter(config -> !requiredState.containsKey(config.getName()))
-              .filter(config -> !config.isDefault())
-              .filter(config -> !config.isReadOnly())
-              .forEach(config -> configToApply.put(config.getName(), Optional.empty()));
-
-          /*
-           * Update config values
-           */
-          broker.getConfig().values().stream()
-              .filter(config -> requiredState.containsKey(config.getName()))
-              .filter(config -> !config.isDefault())
-              .filter(config -> !requiredState.get(config.getName()).equals(config.getValue()))
-              .forEach(
-                  config ->
-                      configToApply.put(
-                          config.getName(),
-                          Optional.ofNullable(requiredState.get(config.getName()))));
-
-          result.put(String.valueOf(broker.getId()), configToApply);
-        });
-
-    return result;
-  }
-
-  private boolean alreadyExists(Collection<ExistingTopic> existingTopics, Topic topic) {
+  private boolean alreadyExists(
+      Collection<ExistingTopic> existingTopics, RequiredTopic requiredTopic) {
     return existingTopics.stream()
         .map(ExistingTopic::getName)
         .collect(toList())
-        .contains(topic.getName());
+        .contains(requiredTopic.getName());
   }
 
   private Integer getDefaultReplicationFactor() {
-    return allBrokers.stream()
+    return currentState.getBrokers().stream()
         .map(Broker::getConfig)
         .map(config -> config.get("default.replication.factor"))
         .filter(Objects::nonNull)
@@ -254,7 +270,7 @@ public class DeltaCalculator {
   }
 
   private Integer getDefaultPartitionCount() {
-    return allBrokers.stream()
+    return currentState.getBrokers().stream()
         .map(Broker::getConfig)
         .map(config -> config.get("num.partitions"))
         .filter(Objects::nonNull)
@@ -266,7 +282,7 @@ public class DeltaCalculator {
 
   @Value
   private static class ConfigUpdate {
-    String topicName;
+    TopicName topicName;
     Map<String, String> oldConfig;
     Map<String, String> newConfig;
   }

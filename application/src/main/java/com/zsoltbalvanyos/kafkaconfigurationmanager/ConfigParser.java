@@ -6,23 +6,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import java.io.File;
-import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
+import lombok.SneakyThrows;
 
 @AllArgsConstructor
 public class ConfigParser {
 
   final String pathToConfigs;
 
-  public Configuration getConfiguration() throws IOException {
+  @SneakyThrows
+  public Configuration getConfiguration() {
     return new ObjectMapper(new YAMLFactory())
         .registerModule(new Jdk8Module())
         .readValue(new File(pathToConfigs), Configuration.class);
   }
 
-  public List<Topic> getRequiredState(Configuration configuration) {
+  public List<RequiredTopic> getRequiredState(Configuration configuration) {
 
     Map<String, Map<String, String>> configSetMap = new HashMap<>();
 
@@ -43,11 +44,13 @@ public class ConfigParser {
         .collect(Collectors.toList());
   }
 
-  protected Topic buildTopic(
+  protected RequiredTopic buildTopic(
       Map<String, String> topicDescription, Map<String, Map<String, String>> configSetMap) {
+
     if (!topicDescription.containsKey("name") || topicDescription.get("name").isEmpty()) {
       throw new RuntimeException("Topic definition must have a non-empty name");
     }
+
     String name = topicDescription.get("name");
     topicDescription.remove("name");
 
@@ -81,6 +84,6 @@ public class ConfigParser {
     topicConfigs.remove("replicationFactor");
     topicConfigs.remove("configName");
 
-    return new Topic(name, partitionCount, replicationFactor, topicConfigs);
+    return new RequiredTopic(TopicName.of(name), partitionCount, replicationFactor, topicConfigs);
   }
 }

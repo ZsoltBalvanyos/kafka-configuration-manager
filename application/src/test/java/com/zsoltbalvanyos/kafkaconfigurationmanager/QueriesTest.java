@@ -3,13 +3,14 @@ package com.zsoltbalvanyos.kafkaconfigurationmanager;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.times;
 
-import com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.*;
-import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
@@ -23,17 +24,14 @@ import org.apache.kafka.common.resource.ResourceType;
 import org.jeasy.random.EasyRandom;
 import org.junit.Test;
 
-public class KafkaClientTest {
+public class QueriesTest {
 
   EasyRandom random = TestUtil.randomizer;
-
   Admin admin = mock(Admin.class);
-  KafkaFuture<Void> kafkaFuture = mock(KafkaFuture.class);
-
-  KafkaClient kafkaClient = new KafkaClient(admin, 5);
+  Queries queries = new Queries(admin);
 
   @Test
-  public void getAllBrokers() throws ExecutionException, InterruptedException {
+  public void getAllBrokers() {
     Node node1 = new Node(1, "localhost", 1234);
     Node node2 = new Node(2, "localhost", 4567);
     Config config1 = random.nextObject(Config.class);
@@ -50,38 +48,38 @@ public class KafkaClientTest {
             KafkaFuture.completedFuture(
                 Map.of(
                     new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(node1.id())),
-                        config1,
+                    config1,
                     new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(node2.id())),
-                        config2)));
+                    config2)));
     when(admin.describeConfigs(any())).thenReturn(describeConfigsResult);
 
-    Set<Model.Broker> result = kafkaClient.getAllBrokers();
+    Set<Model.Broker> result = queries.getBrokers();
 
     assertThat(result)
         .containsExactlyInAnyOrderElementsOf(
             Set.of(
                 new Model.Broker(
-                    1,
+                    Model.BrokerId.of("1"),
                     config1.entries().stream()
                         .collect(
                             Collectors.toMap(
                                 ConfigEntry::name,
                                 c ->
-                                    new BrokerConfig(
+                                    new Model.BrokerConfig(
                                         c.name(), c.value(), c.isDefault(), c.isReadOnly())))),
                 new Model.Broker(
-                    2,
+                    Model.BrokerId.of("2"),
                     config2.entries().stream()
                         .collect(
                             Collectors.toMap(
                                 ConfigEntry::name,
                                 c ->
-                                    new BrokerConfig(
+                                    new Model.BrokerConfig(
                                         c.name(), c.value(), c.isDefault(), c.isReadOnly()))))));
   }
 
   @Test
-  public void existingTopicConfigsFetched() throws ExecutionException, InterruptedException {
+  public void existingTopicConfigsFetched() {
     TopicListing topicListing1 = new TopicListing("topicListing1", false);
     TopicListing topicListing2 = new TopicListing("topicListing2", false);
     Config config1 = random.nextObject(Config.class);
@@ -108,132 +106,38 @@ public class KafkaClientTest {
             KafkaFuture.completedFuture(
                 Map.of(
                     topicListing1.name(),
-                        new TopicDescription(
-                            topicListing1.name(),
-                            false,
-                            List.of(
-                                new TopicPartitionInfo(
-                                    0, null, List.of(new Node(0, "", 0)), List.of()))),
+                    new TopicDescription(
+                        topicListing1.name(),
+                        false,
+                        List.of(
+                            new TopicPartitionInfo(
+                                0, null, List.of(new Node(0, "", 0)), List.of()))),
                     topicListing2.name(),
-                        new TopicDescription(
-                            topicListing2.name(),
-                            false,
-                            List.of(
-                                new TopicPartitionInfo(
-                                    0, null, List.of(new Node(0, "", 0)), List.of()))))));
+                    new TopicDescription(
+                        topicListing2.name(),
+                        false,
+                        List.of(
+                            new TopicPartitionInfo(
+                                0, null, List.of(new Node(0, "", 0)), List.of()))))));
     when(admin.describeTopics(any())).thenReturn(describeTopicsResult);
 
-    List<ExistingTopic> result = kafkaClient.getExistingTopics();
+    List<Model.ExistingTopic> result = queries.getExistingTopics();
 
     assertThat(result)
         .containsExactlyInAnyOrderElementsOf(
             List.of(
-                new ExistingTopic(
-                    topicListing1.name(),
-                    List.of(new Partition(0, List.of(0))),
+                new Model.ExistingTopic(
+                    Model.TopicName.of(topicListing1.name()),
+                    Map.of(Model.PartitionNumber.of(0), List.of(0)),
                     config1.entries().stream()
                         .filter(ce -> !ce.isDefault())
                         .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value))),
-                new ExistingTopic(
-                    topicListing2.name(),
-                    List.of(new Partition(0, List.of(0))),
+                new Model.ExistingTopic(
+                    Model.TopicName.of(topicListing2.name()),
+                    Map.of(Model.PartitionNumber.of(0), List.of(0)),
                     config2.entries().stream()
                         .filter(ce -> !ce.isDefault())
                         .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value)))));
-  }
-
-  @Test
-  public void updateRequestBuild() {
-    Map<String, Map<String, Optional<String>>> update =
-        Map.of(
-            "topic1",
-                Map.of(
-                    "config1", Optional.of("value1"),
-                    "config2", Optional.of("value2")),
-            "topic2",
-                Map.of(
-                    "config3", Optional.empty(),
-                    "config4", Optional.of("value4")));
-
-    Map<ConfigResource, Collection<AlterConfigOp>> result =
-        kafkaClient.getAlterConfigRequest(update, ConfigResource.Type.TOPIC);
-
-    assertThat(result)
-        .containsExactlyInAnyOrderEntriesOf(
-            Map.of(
-                new ConfigResource(ConfigResource.Type.TOPIC, "topic1"),
-                    Set.of(
-                        new AlterConfigOp(
-                            new ConfigEntry("config1", "value1"), AlterConfigOp.OpType.SET),
-                        new AlterConfigOp(
-                            new ConfigEntry("config2", "value2"), AlterConfigOp.OpType.SET)),
-                new ConfigResource(ConfigResource.Type.TOPIC, "topic2"),
-                    Set.of(
-                        new AlterConfigOp(
-                            new ConfigEntry("config3", ""), AlterConfigOp.OpType.DELETE),
-                        new AlterConfigOp(
-                            new ConfigEntry("config4", "value4"), AlterConfigOp.OpType.SET))));
-  }
-
-  @Test
-  public void givenListOfTopics_whenCreateTopicsCalled_thenAdminCreateTopicsCalled() {
-    var topics = random.objects(Topic.class, 10).collect(Collectors.toList());
-    var newTopics = topics.stream().map(kafkaClient::toNewTopic).collect(Collectors.toList());
-
-    CreateTopicsResult createTopicsResult = mock(CreateTopicsResult.class);
-    when(createTopicsResult.all()).thenReturn(kafkaFuture);
-    when(admin.createTopics(eq(newTopics))).thenReturn(createTopicsResult);
-
-    kafkaClient.createTopics(topics);
-    verify(admin, times(1)).createTopics(eq(newTopics));
-  }
-
-  @Test
-  public void givenListOfTopicNames_whenDeleteTopicsCalled_thenAdminDeleteTopicsCalled() {
-    var topicNames = random.objects(String.class, 10).collect(Collectors.toList());
-
-    DeleteTopicsResult deleteTopicsResult = mock(DeleteTopicsResult.class);
-    when(deleteTopicsResult.all()).thenReturn(kafkaFuture);
-    when(admin.deleteTopics(eq(topicNames))).thenReturn(deleteTopicsResult);
-
-    kafkaClient.deleteTopics(topicNames);
-    verify(admin, times(1)).deleteTopics(topicNames);
-  }
-
-  @Test
-  public void givenAcls_whenCreateAcls_thenAdminCreateAclsCalled() {
-    var acls =
-        random
-            .objects(Acl.class, 10)
-            .map(a -> a.withResourceType(ResourceType.TOPIC.name()))
-            .collect(Collectors.toSet());
-    var newAcls = acls.stream().flatMap(kafkaClient::toAclBinding).collect(Collectors.toSet());
-
-    CreateAclsResult createAclsResult = mock(CreateAclsResult.class);
-    when(createAclsResult.all()).thenReturn(kafkaFuture);
-    when(admin.createAcls(eq(newAcls))).thenReturn(createAclsResult);
-
-    kafkaClient.createAcls(acls);
-    verify(admin, times(1)).createAcls(eq(newAcls));
-  }
-
-  @Test
-  public void givenAcls_whenDeleteAcls_thenAdminDeleteAclsCalled() {
-    var acls =
-        random
-            .objects(Acl.class, 10)
-            .map(a -> a.withResourceType(ResourceType.TOPIC.name()))
-            .collect(Collectors.toSet());
-    var aclsToDelete =
-        acls.stream().flatMap(kafkaClient::toAclBindingFilter).collect(Collectors.toSet());
-
-    AclBinding aclBinding = mock(AclBinding.class);
-    DeleteAclsResult deleteAclsResult = mock(DeleteAclsResult.class);
-    when(deleteAclsResult.all()).thenReturn(KafkaFuture.completedFuture(List.of(aclBinding)));
-    when(admin.deleteAcls(eq(aclsToDelete))).thenReturn(deleteAclsResult);
-
-    kafkaClient.deleteAcls(acls);
-    verify(admin, times(1)).deleteAcls(eq(aclsToDelete));
   }
 
   @Test
@@ -244,25 +148,25 @@ public class KafkaClientTest {
     when(describeAclsResult.values()).thenReturn(KafkaFuture.completedFuture(aclBindings));
     when(admin.describeAcls(any())).thenReturn(describeAclsResult);
 
-    var result = kafkaClient.getAcls();
+    var result = queries.getAcls();
 
     assertThat(aclBindings.stream().map(AclBinding::pattern).map(ResourcePattern::name))
         .containsExactlyInAnyOrderElementsOf(
-            result.stream().map(Acl::getName).collect(Collectors.toList()));
+            result.stream().map(Model.Acl::getName).collect(Collectors.toList()));
     assertThat(
             aclBindings.stream()
                 .map(AclBinding::pattern)
                 .map(ResourcePattern::resourceType)
                 .map(ResourceType::name))
         .containsExactlyInAnyOrderElementsOf(
-            result.stream().map(Acl::getResourceType).collect(Collectors.toList()));
+            result.stream().map(Model.Acl::getResourceType).collect(Collectors.toList()));
     assertThat(
             aclBindings.stream()
                 .map(AclBinding::pattern)
                 .map(ResourcePattern::patternType)
                 .map(PatternType::name))
         .containsExactlyInAnyOrderElementsOf(
-            result.stream().map(Acl::getPatternType).collect(Collectors.toList()));
+            result.stream().map(Model.Acl::getPatternType).collect(Collectors.toList()));
   }
 
   @Test
@@ -273,7 +177,7 @@ public class KafkaClientTest {
               throw new ExecutionException(new SecurityDisabledException(""));
             });
 
-    var result = kafkaClient.getAcls();
+    var result = queries.getAcls();
 
     assertThat(result).isEmpty();
   }
@@ -282,23 +186,34 @@ public class KafkaClientTest {
   public void givenBroker_whenOngoingAssignment_waitTillAssignmentDone() {
     ListPartitionReassignmentsResult listPartitionReassignmentsResult =
         mock(ListPartitionReassignmentsResult.class);
+
+    KafkaFuture<Map<TopicPartition, PartitionReassignment>> future1 =
+        KafkaFuture.completedFuture(
+            Map.of(
+                new TopicPartition("topic-1", 0),
+                new PartitionReassignment(List.of(1), List.of(2), List.of(3))));
+
+    KafkaFuture<Map<TopicPartition, PartitionReassignment>> future2 =
+        KafkaFuture.completedFuture(
+            Map.of(
+                new TopicPartition("topic-1", 0),
+                new PartitionReassignment(List.of(1), List.of(2), List.of(3))));
+
+    KafkaFuture<Map<TopicPartition, PartitionReassignment>> future3 =
+        KafkaFuture.completedFuture(Map.of());
+
     when(listPartitionReassignmentsResult.reassignments())
-        .thenReturn(
-            KafkaFuture.completedFuture(
-                Map.of(
-                    new TopicPartition("topic-1", 0),
-                    new PartitionReassignment(List.of(1), List.of(2), List.of(3)))),
-            KafkaFuture.completedFuture(
-                Map.of(
-                    new TopicPartition("topic-1", 0),
-                    new PartitionReassignment(List.of(1), List.of(2), List.of(3)))),
-            KafkaFuture.completedFuture(Map.of()));
+        .thenReturn(future1)
+        .thenReturn(future2)
+        .thenReturn(future3);
+
     when(admin.listPartitionReassignments())
         .thenReturn(
             listPartitionReassignmentsResult,
             listPartitionReassignmentsResult,
             listPartitionReassignmentsResult);
-    assertThat(kafkaClient.ongoingReassignment()).isFalse();
+
+    assertThat(queries.ongoingReassignment(10)).isFalse();
     verify(admin, times(3)).listPartitionReassignments();
   }
 
@@ -306,6 +221,7 @@ public class KafkaClientTest {
   public void givenBroker_whenOngoingAssignment_timeout() {
     ListPartitionReassignmentsResult listPartitionReassignmentsResult =
         mock(ListPartitionReassignmentsResult.class);
+
     when(listPartitionReassignmentsResult.reassignments())
         .thenReturn(
             KafkaFuture.completedFuture(
@@ -313,7 +229,8 @@ public class KafkaClientTest {
                     new TopicPartition("topic-1", 0),
                     new PartitionReassignment(List.of(1), List.of(2), List.of(3)))));
     when(admin.listPartitionReassignments()).thenReturn(listPartitionReassignmentsResult);
-    assertThat(kafkaClient.ongoingReassignment()).isTrue();
+
+    assertThat(queries.ongoingReassignment(5)).isTrue();
     verify(admin, times(5)).listPartitionReassignments();
   }
 }

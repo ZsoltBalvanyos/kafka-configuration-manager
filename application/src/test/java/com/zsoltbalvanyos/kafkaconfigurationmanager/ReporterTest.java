@@ -1,5 +1,6 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
+import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -17,29 +18,29 @@ public class ReporterTest {
   }
 
   @Test
-  public void test() throws IOException {
+  public void whenStringifyCurrentState_correctStringReturned() throws IOException {
     Collection<Model.ExistingTopic> existingTopics =
         List.of(
             new Model.ExistingTopic(
-                "topic-4",
-                List.of(
-                    new Model.Partition(2, List.of(0, 1)),
-                    new Model.Partition(4, List.of(0, 1, 2)),
-                    new Model.Partition(6, List.of(0, 1, 3))),
+                TopicName.of("topic-4"),
+                Map.of(
+                    PartitionNumber.of(2), List.of(0, 1),
+                    PartitionNumber.of(4), List.of(0, 1, 2),
+                    PartitionNumber.of(6), List.of(0, 1, 3)),
                 Map.of("key-3", "value-3")),
             new Model.ExistingTopic(
-                "topic-14",
-                List.of(new Model.Partition(4, List.of(0, 1))),
+                TopicName.of("topic-14"),
+                Map.of(PartitionNumber.of(4), List.of(0, 1)),
                 Map.of("key-3", "value-3")),
             new Model.ExistingTopic(
-                "topic-54",
-                List.of(new Model.Partition(4, List.of(0, 1))),
+                TopicName.of("topic-54"),
+                Map.of(PartitionNumber.of(4), List.of(0, 1)),
                 Map.of("key-3", "value-3")));
 
     Collection<Model.Broker> brokers =
         List.of(
             new Model.Broker(
-                1,
+                BrokerId.of("1"),
                 Map.of(
                     "key-1", new Model.BrokerConfig("key-1", "value-1", true, true),
                     "key-2", new Model.BrokerConfig("key-2", "value-2", false, true),
@@ -63,70 +64,85 @@ public class ReporterTest {
                     new Model.Permission("principal-6", "host-6", "operation-6", "type-6"),
                     new Model.Permission("principal-2", "host-2", "operation-2", "type-2"))));
 
-    assertThat(reporter.print(existingTopics, brokers, acls))
+    assertThat(reporter.stringify(new Model.CurrentState(existingTopics, brokers, acls)))
         .isEqualTo(readFile("describe-output.txt"));
   }
 
   @Test
-  public void test2() throws IOException {
+  public void whenStringifyExecutionPlan_correctStringReturned() throws IOException {
+    Model.CurrentState currentState =
+        new Model.CurrentState(
+            Set.of(
+                new Model.ExistingTopic(
+                    TopicName.of("topic-1"),
+                    Map.of(PartitionNumber.of(0), List.of(1)),
+                    Map.of("key-1", "value-1")),
+                new Model.ExistingTopic(
+                    TopicName.of("topic-2"),
+                    Map.of(PartitionNumber.of(1), List.of(1)),
+                    Map.of("key-1", "value-1"))),
+            Set.of(),
+            Set.of());
     Model.ExecutionPlan executionPlan =
         new Model.ExecutionPlan(
-            // original topic configurations
-            Map.of(
-                "topic-1", Map.of("key-1", "value-1"),
-                "topic-2", Map.of("key-1", "value-1")),
-
-            // original partition settings
-            Map.of(
-                "topic-1", Map.of(0, 1),
-                "topic-2", Map.of(1, 1)),
 
             // replication changes
             Map.of(
-                "topic-1", List.of(new Model.Partition(0, List.of(0, 1))),
-                "topic-2", List.of(new Model.Partition(2, List.of(0, 1)))),
+                TopicName.of("topic-1"),
+                    List.of(new Model.Partition(PartitionNumber.of(0), List.of(0, 1))),
+                TopicName.of("topic-2"),
+                    List.of(new Model.Partition(PartitionNumber.of(2), List.of(0, 1)))),
 
             // partition changes
             Map.of(
-                "topic-1", 20,
-                "topic-2", 30),
+                TopicName.of("topic-1"), 20,
+                TopicName.of("topic-2"), 30),
 
             // topic configuration changes
             Map.of(
-                "topic-1", Map.of("key-1", Optional.of("new-value-1")),
-                "topic-2", Map.of("key-2", Optional.of("new-value-2"))),
+                TopicName.of("topic-1"), Map.of("key-1", Optional.of("new-value-1")),
+                TopicName.of("topic-2"), Map.of("key-2", Optional.of("new-value-2"))),
 
             // topics to create
             List.of(
-                new Model.Topic(
-                    "topic-3", Optional.of(3), Optional.of(3), Map.of("key-3", "value-3")),
-                new Model.Topic(
-                    "topic-5", Optional.of(3), Optional.of(3), Map.of("key-3", "value-3")),
-                new Model.Topic(
-                    "topic-8", Optional.of(3), Optional.of(3), Map.of("key-3", "value-3"))),
+                new Model.RequiredTopic(
+                    TopicName.of("topic-3"),
+                    Optional.of(3),
+                    Optional.of(3),
+                    Map.of("key-3", "value-3")),
+                new Model.RequiredTopic(
+                    TopicName.of("topic-5"),
+                    Optional.of(3),
+                    Optional.of(3),
+                    Map.of("key-3", "value-3")),
+                new Model.RequiredTopic(
+                    TopicName.of("topic-8"),
+                    Optional.of(3),
+                    Optional.of(3),
+                    Map.of("key-3", "value-3"))),
 
             // topics to delete
             List.of(
                 new Model.ExistingTopic(
-                    "topic-4",
-                    List.of(
-                        new Model.Partition(2, List.of(0, 1)),
-                        new Model.Partition(4, List.of(0, 1, 2)),
-                        new Model.Partition(6, List.of(0, 1, 3))),
+                    TopicName.of("topic-4"),
+                    Map.of(
+                        PartitionNumber.of(2), List.of(0, 1),
+                        PartitionNumber.of(4), List.of(0, 1, 2),
+                        PartitionNumber.of(6), List.of(0, 1, 3)),
                     Map.of("key-3", "value-3")),
                 new Model.ExistingTopic(
-                    "topic-14",
-                    List.of(new Model.Partition(4, List.of(0, 1))),
+                    TopicName.of("topic-14"),
+                    Map.of(PartitionNumber.of(4), List.of(0, 1)),
                     Map.of("key-3", "value-3")),
                 new Model.ExistingTopic(
-                    "topic-54",
-                    List.of(new Model.Partition(4, List.of(0, 1))),
+                    TopicName.of("topic-54"),
+                    Map.of(PartitionNumber.of(4), List.of(0, 1)),
                     Map.of("key-3", "value-3"))),
 
             // broker configuration changes
             Map.of(
-                "1", Map.of("key-1", Optional.of("new-value-1")),
-                "2",
+                BrokerId.of("1"), Map.of("key-1", Optional.of("new-value-1")),
+                BrokerId.of("2"),
                     Map.of(
                         "key-2",
                         Optional.of("new-value-2"),
@@ -169,6 +185,7 @@ public class ReporterTest {
                         new Model.Permission("principal-1", "host-1", "operation-1", "type-1"),
                         new Model.Permission("principal-2", "host-2", "operation-2", "type-2")))));
 
-    assertThat(reporter.print(executionPlan)).isEqualTo(readFile("plan-output.txt"));
+    assertThat(reporter.stringify(executionPlan, currentState))
+        .isEqualTo(readFile("plan-output.txt"));
   }
 }
