@@ -1,10 +1,9 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
-import static java.util.stream.Collectors.toMap;
-
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
-import java.util.*;
+import io.vavr.collection.*;
+import java.util.Optional;
 import java.util.function.Function;
 import lombok.*;
 
@@ -15,9 +14,6 @@ public class Model {
   public static class Configuration {
     @JsonSetter(nulls = Nulls.AS_EMPTY)
     Map<String, String> brokerConfig;
-
-    @JsonSetter(nulls = Nulls.AS_EMPTY)
-    Set<Map<String, String>> perBrokerConfig;
 
     @JsonSetter(nulls = Nulls.AS_EMPTY)
     Set<Map<String, String>> topics;
@@ -82,7 +78,7 @@ public class Model {
   @With
   public static class ExistingTopic implements Identified {
     TopicName name;
-    Map<PartitionNumber, Collection<Integer>> partitions;
+    Map<PartitionNumber, Traversable<Integer>> partitions;
     Map<String, String> config;
   }
 
@@ -121,14 +117,14 @@ public class Model {
   @Value
   @With
   public static class ExecutionPlan {
-    Map<TopicName, List<Partition>> replicationChanges;
+    Map<TopicName, Traversable<Partition>> replicationChanges;
     Map<TopicName, Integer> partitionChanges;
     Map<TopicName, Map<String, Optional<String>>> topicConfigurationChanges;
-    List<RequiredTopic> topicsToCreate;
-    List<ExistingTopic> topicsToDelete;
+    Traversable<RequiredTopic> topicsToCreate;
+    Traversable<ExistingTopic> topicsToDelete;
     Map<BrokerId, Map<String, Optional<String>>> brokerConfigurationChanges;
-    List<Acl> aclsToCreate;
-    List<Acl> aclsToDelete;
+    Traversable<Acl> aclsToCreate;
+    Traversable<Acl> aclsToDelete;
   }
 
   @Value
@@ -137,7 +133,7 @@ public class Model {
     String resourceType;
     String name;
     String patternType;
-    Collection<Permission> permissions;
+    Seq<Permission> permissions;
   }
 
   @Value
@@ -152,20 +148,20 @@ public class Model {
   @Value
   @With
   static class CurrentState {
-    Collection<ExistingTopic> topics;
-    Collection<Broker> brokers;
-    Collection<Acl> acls;
+    Traversable<ExistingTopic> topics;
+    Traversable<Broker> brokers;
+    Traversable<Acl> acls;
 
     @Getter(lazy = true)
     Map<TopicName, ExistingTopic> topicMap =
-        topics.stream().collect(toMap(ExistingTopic::getName, Function.identity()));
+        topics.toMap(ExistingTopic::getName, Function.identity());
   }
 
   @Value
   @With
   static class RequiredState {
-    Collection<RequiredTopic> topics;
+    Traversable<RequiredTopic> topics;
     Map<String, String> brokers;
-    Collection<Acl> acls;
+    Traversable<Acl> acls;
   }
 }

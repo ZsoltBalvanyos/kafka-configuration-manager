@@ -1,11 +1,17 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
+import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.*;
 
 import com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
-import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import io.vavr.collection.List;
+import io.vavr.collection.Map;
+import io.vavr.collection.Traversable;
+import io.vavr.control.Option;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
 
@@ -15,209 +21,162 @@ public class DeltaCalculator {
   final CurrentState currentState;
   final RequiredState requiredState;
 
-  public List<Acl> aclsToCreate() {
-    return requiredState.getAcls().stream()
-        .filter(acl -> !currentState.getAcls().contains(acl))
-        .collect(toList());
+  public Traversable<Acl> aclsToCreate() {
+    return requiredState.getAcls().filter(acl -> !currentState.getAcls().contains(acl));
   }
 
-  public List<Acl> aclsToDelete() {
-    return currentState.getAcls().stream()
-        .filter(acl -> !requiredState.getAcls().contains(acl))
-        .collect(toList());
+  public Traversable<Acl> aclsToDelete() {
+    return currentState.getAcls().filter(acl -> !requiredState.getAcls().contains(acl));
   }
 
-  public List<RequiredTopic> topicsToCreate() {
-    return requiredState.getTopics().stream()
-        .filter(topic -> notContains(currentState.getTopics(), topic.getName()))
-        .collect(toList());
+  public Traversable<RequiredTopic> topicsToCreate() {
+    return requiredState
+        .getTopics()
+        .filter(topic -> notContains(currentState.getTopics(), topic.getName()));
   }
 
-  public List<ExistingTopic> topicsToDelete() {
-    return currentState.getTopics().stream()
-        .filter(topic -> notContains(requiredState.getTopics(), topic.getName()))
-        .collect(toList());
+  public Traversable<ExistingTopic> topicsToDelete() {
+    return currentState
+        .getTopics()
+        .filter(topic -> notContains(requiredState.getTopics(), topic.getName()));
   }
 
-  private boolean notContains(Collection<? extends Identified> topics, Id<?> topicName) {
-    return !topics.stream().map(Identified::getName).collect(toList()).contains(topicName);
+  private boolean notContains(Traversable<? extends Identified> topics, Id<?> topicName) {
+    return !topics.map(Identified::getName).collect(toList()).contains(topicName);
   }
 
   public Map<TopicName, Integer> partitionUpdate() {
-
-    var currentStateMap =
-        currentState.getTopics().stream()
-            .collect(toMap(ExistingTopic::getName, ExistingTopic::getPartitions));
-
-    Map<TopicName, Integer> result = new HashMap<>();
-
-    requiredState.getTopics().stream()
-        .filter(topic -> alreadyExists(currentState.getTopics(), topic))
-        .forEach(
-            topic ->
-                topic
-                    .getPartitionCount()
-                    .ifPresent(
-                        partitionCount -> {
-                          if (partitionCount < currentStateMap.get(topic.getName()).size()) {
-                            throw new RuntimeException(
-                                String.format(
-                                    "Number of partitions cannot be lowered. Current number of partitions: %d, requested number of partitions: %d",
-                                    currentStateMap.get(topic.getName()).size(), partitionCount));
-                          }
-                          if (partitionCount > currentStateMap.get(topic.getName()).size()) {
-                            result.put(
-                                topic.getName(),
-                                topic
-                                    .getPartitionCount()
-                                    .orElseGet(this::getDefaultPartitionCount));
-                          }
-                        }));
-
-    return result;
+    var topicToPartitionMap =
+        currentState.getTopics().toMap(ExistingTopic::getName, ExistingTopic::getPartitions);
+    return requiredState
+        .getTopics()
+        .filter(this::exists)
+        .toMap(RequiredTopic::getName, RequiredTopic::getPartitionCount)
+        .mapValues(pc -> pc.orElseGet(this::getDefaultPartitionCount))
+        .filter(
+            (topic, reqPartCount) ->
+                validPartitionCount(topicToPartitionMap.get(topic).get().size(), reqPartCount));
   }
 
-  public Map<TopicName, List<Partition>> replicationUpdate() {
-    Map<TopicName, List<Partition>> result = new HashMap<>();
+  private boolean validPartitionCount(int current, int required) {
+    if (required < current) {
+      throw new RuntimeException(
+          String.format(
+              "Number of partitions cannot be lowered. Current number of partitions: %d, requested number of partitions: %d",
+              current, required));
+    }
+    return required > current;
+  }
 
-    requiredState.getTopics().stream()
-        .filter(topic -> alreadyExists(currentState.getTopics(), topic))
-        .forEach(
-            topic -> {
-              List<Partition> partitions =
-                  IntStream.range(
-                          0, currentState.getTopicMap().get(topic.getName()).getPartitions().size())
-                      .filter(
-                          partition ->
-                              currentState
-                                      .getTopicMap()
-                                      .get(topic.getName())
-                                      .getPartitions()
-                                      .get(PartitionNumber.of(partition))
-                                      .size()
-                                  != topic
-                                      .getReplicationFactor()
-                                      .orElseGet(this::getDefaultReplicationFactor))
-                      .mapToObj(
-                          partition ->
-                              new Partition(
-                                  PartitionNumber.of(partition),
-                                  selectBrokersForReplication(
-                                      currentState
-                                          .getTopicMap()
-                                          .get(topic.getName())
-                                          .getPartitions()
-                                          .get(PartitionNumber.of(partition)),
-                                      topic
-                                          .getReplicationFactor()
-                                          .orElseGet(this::getDefaultReplicationFactor))))
-                      .collect(Collectors.toList());
+  public Map<TopicName, Traversable<Partition>> replicationUpdate() {
+    var topicToPartitionMap =
+        currentState.getTopics().toMap(ExistingTopic::getName, ExistingTopic::getPartitions);
 
-              if (!partitions.isEmpty()) {
-                result.put(topic.getName(), partitions);
-              }
-            });
-
-    return result;
+    return requiredState
+        .getTopics()
+        .filter(this::exists)
+        .toMap(RequiredTopic::getName, RequiredTopic::getReplicationFactor)
+        .mapValues(rep -> rep.orElseGet(this::getDefaultReplicationFactor))
+        .map(
+            (topic, requiredRep) ->
+                Map.entry(
+                    topic,
+                    topicToPartitionMap
+                        .get(topic)
+                        .get()
+                        .filter((partitionNumber, replicas) -> replicas.size() != requiredRep)
+                        .mapValues(replicas -> selectBrokersForReplication(replicas, requiredRep))
+                        .map(p -> new Partition(p._1, p._2))));
   }
 
   public Map<TopicName, Map<String, Optional<String>>> topicConfigUpdate() {
-    Map<TopicName, Map<String, Optional<String>>> result = new HashMap<>();
 
     Map<TopicName, Map<String, String>> currentConfig =
-        currentState.getTopics().stream()
-            .collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig));
+        currentState.getTopics().toMap(ExistingTopic::getName, ExistingTopic::getConfig);
 
     Map<TopicName, Map<String, String>> requiredConfig =
-        requiredState.getTopics().stream()
-            .collect(toMap(RequiredTopic::getName, RequiredTopic::getConfig));
+        requiredState.getTopics().toMap(RequiredTopic::getName, RequiredTopic::getConfig);
 
-    requiredState.getTopics().stream()
-        .filter(topic -> alreadyExists(currentState.getTopics(), topic))
-        .map(
-            topic ->
-                new ConfigUpdate(
-                    topic.getName(),
-                    currentConfig.get(topic.getName()),
-                    requiredConfig.get(topic.getName())))
-        .forEach(
-            configUpdate -> {
-              List<String> configNames = new ArrayList<>();
-              configNames.addAll(configUpdate.oldConfig.keySet());
-              configNames.addAll(configUpdate.newConfig.keySet());
+    Function<RequiredTopic, ConfigUpdate> toConfigUpdate =
+        topic ->
+            new ConfigUpdate(
+                topic.getName(),
+                currentConfig.get(topic.getName()).get(),
+                requiredConfig.get(topic.getName()).get());
 
-              Map<String, Optional<String>> configToApply = new HashMap<>();
-              configNames.forEach(
-                  configName -> {
-                    if (configUpdate.oldConfig.containsKey(configName)
-                        && !configUpdate.newConfig.containsKey(configName)) {
-                      configToApply.put(configName, Optional.empty());
-                    } else if (!configUpdate
-                        .oldConfig
-                        .getOrDefault(configName, UUID.randomUUID().toString())
-                        .equals(configUpdate.newConfig.get(configName))) {
-                      configToApply.put(
-                          configName, Optional.ofNullable(configUpdate.newConfig.get(configName)));
-                    }
-                  });
-              if (!configToApply.isEmpty()) {
-                result.put(configUpdate.topicName, configToApply);
-              }
-            });
+    return requiredState
+        .getTopics()
+        .filter(this::exists)
+        .map(toConfigUpdate)
+        .toMap(ConfigUpdate::getTopicName, Function.identity())
+        .mapValues(this::getKeyValueMap);
+  }
 
-    return result;
+  private Map<String, Optional<String>> getKeyValueMap(ConfigUpdate configUpdate) {
+    var oldConfig = configUpdate.oldConfig;
+    var newConfig = configUpdate.newConfig;
+    List<String> configNames = List.ofAll(oldConfig.keySet()).appendAll(newConfig.keySet());
+
+    Predicate<String> removed =
+        configName -> oldConfig.containsKey(configName) && !newConfig.containsKey(configName);
+
+    Predicate<String> changed =
+        configName ->
+            !oldConfig
+                .get(configName)
+                .getOrElse(UUID.randomUUID().toString())
+                .equals(newConfig.get(configName).getOrElse(UUID.randomUUID().toString()));
+
+    return configNames
+        .filter(removed.or(changed))
+        .toMap(
+            configName ->
+                removed.test(configName)
+                    ? Map.entry(configName, Optional.empty())
+                    : Map.entry(configName, newConfig.get(configName).toJavaOptional()));
   }
 
   public Map<BrokerId, Map<String, Optional<String>>> brokerConfigUpdate() {
-    Map<BrokerId, Map<String, Optional<String>>> result = new HashMap<>();
 
+    Map<BrokerId, Map<String, BrokerConfig>> brokerIdMapMap =
+        currentState.getBrokers().toMap(Broker::getId, Broker::getConfig);
+
+    return brokerIdMapMap.mapValues(this::updateConfig);
+  }
+
+  private Map<String, Optional<String>> updateConfig(Map<String, BrokerConfig> configs) {
     var requiredBrokerConfig = requiredState.getBrokers();
+    Predicate<BrokerConfig> removed = config -> !requiredBrokerConfig.containsKey(config.getName());
+    Predicate<BrokerConfig> changed =
+        config ->
+            !requiredBrokerConfig
+                .get(config.getName())
+                .map(config.getValue()::equals)
+                .getOrElse(false);
 
-    currentState
-        .getBrokers()
-        .forEach(
-            broker -> {
-              Map<String, Optional<String>> configToApply = new HashMap<>();
+    var result =
+        configs
+            .values()
+            .filter(removed.or(changed))
+            .filter(not(BrokerConfig::isDefault))
+            .filter(not(BrokerConfig::isReadOnly))
+            .toMap(
+                config ->
+                    removed.test(config)
+                        ? Map.entry(config.getName(), Optional.<String>empty())
+                        : Map.entry(
+                            config.getName(),
+                            requiredBrokerConfig.get(config.getName()).toJavaOptional()));
 
-              /*
-               * Reset config value to the default if the config has been removed from yaml file
-               */
-              broker.getConfig().values().stream()
-                  .filter(config -> !requiredBrokerConfig.containsKey(config.getName()))
-                  .filter(config -> !config.isDefault())
-                  .filter(config -> !config.isReadOnly())
-                  .forEach(config -> configToApply.put(config.getName(), Optional.empty()));
-
-              /*
-               * Update config values
-               */
-              broker.getConfig().values().stream()
-                  .filter(config -> requiredBrokerConfig.containsKey(config.getName()))
-                  .filter(config -> !config.isDefault())
-                  .filter(
-                      config ->
-                          !requiredBrokerConfig.get(config.getName()).equals(config.getValue()))
-                  .forEach(
-                      config ->
-                          configToApply.put(
-                              config.getName(),
-                              Optional.ofNullable(requiredBrokerConfig.get(config.getName()))));
-
-              result.put(broker.getId(), configToApply);
-            });
-
+    System.out.println("--> " + result);
     return result;
   }
 
   public List<Integer> selectBrokersForReplication(
-      Collection<Integer> utilizedBrokers, int replicationFactor) {
+      Traversable<Integer> utilizedBrokers, int replicationFactor) {
 
     var allBrokers =
-        currentState.getBrokers().stream()
-            .map(Broker::getId)
-            .map(Id::get)
-            .map(Integer::valueOf)
-            .collect(toList());
+        currentState.getBrokers().map(Broker::getId).map(Id::get).map(Integer::valueOf);
 
     if (!allBrokers.containsAll(utilizedBrokers)) {
       throw new RuntimeException(
@@ -236,48 +195,39 @@ public class DeltaCalculator {
     }
 
     if (replicationFactor > utilizedBrokers.size()) {
-      List<Integer> availableBrokers = new ArrayList<>(allBrokers);
-      availableBrokers.removeAll(utilizedBrokers);
-      Collections.shuffle(availableBrokers);
-      List<Integer> result =
-          availableBrokers.subList(0, replicationFactor - utilizedBrokers.size());
-      result.addAll(utilizedBrokers);
-      return result;
+      return List.ofAll(allBrokers)
+          .removeAll(utilizedBrokers)
+          .shuffle()
+          .subSequence(0, replicationFactor - utilizedBrokers.size())
+          .appendAll(utilizedBrokers);
     } else {
-      List<Integer> currentStateMutable = new ArrayList<>(utilizedBrokers);
-      Collections.shuffle(currentStateMutable);
-      return currentStateMutable.subList(0, replicationFactor);
+      return List.ofAll(utilizedBrokers).shuffle().subSequence(0, replicationFactor);
     }
   }
 
-  private boolean alreadyExists(
-      Collection<ExistingTopic> existingTopics, RequiredTopic requiredTopic) {
-    return existingTopics.stream()
-        .map(ExistingTopic::getName)
-        .collect(toList())
-        .contains(requiredTopic.getName());
+  private boolean exists(RequiredTopic requiredTopic) {
+    return currentState.getTopics().map(ExistingTopic::getName).contains(requiredTopic.getName());
   }
 
   private Integer getDefaultReplicationFactor() {
-    return currentState.getBrokers().stream()
-        .map(Broker::getConfig)
-        .map(config -> config.get("default.replication.factor"))
-        .filter(Objects::nonNull)
-        .map(BrokerConfig::getValue)
-        .map(Integer::valueOf)
-        .max(Integer::compareTo)
-        .orElse(1);
+    return getDefaultInteger("default.replication.factor");
   }
 
   private Integer getDefaultPartitionCount() {
-    return currentState.getBrokers().stream()
+    return getDefaultInteger("num.partitions");
+  }
+
+  private Integer getDefaultInteger(String configName) {
+    return currentState
+        .getBrokers()
         .map(Broker::getConfig)
-        .map(config -> config.get("num.partitions"))
-        .filter(Objects::nonNull)
+        .map(config -> config.get(configName))
+        .filter(Option::isDefined)
+        .map(Option::get)
         .map(BrokerConfig::getValue)
         .map(Integer::valueOf)
-        .max(Integer::compareTo)
-        .orElse(1);
+        .max()
+        .getOrElse(1);
   }
 
   @Value

@@ -1,9 +1,12 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
 import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
-import static java.util.stream.Collectors.toMap;
 
-import java.util.*;
+import io.vavr.collection.List;
+import io.vavr.collection.Map;
+import io.vavr.collection.Traversable;
+import java.util.Arrays;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
@@ -18,7 +21,7 @@ public class Executor {
   final Queries queries;
   final DeltaCalculator deltaCalculator;
 
-  final List<Callable<String>> rollbacks = new ArrayList<>();
+  final List<Callable<String>> rollbacks = List.of();
 
   @SneakyThrows
   public void run(ExecutionPlan plan, CurrentState currentState) {
@@ -37,7 +40,7 @@ public class Executor {
       }
 
       if (!plan.getBrokerConfigurationChanges().isEmpty()) {
-        rollbacks.add(
+        rollbacks.append(
             rollbackBrokerConfig(
                 deltaCalculator.currentState.getBrokers(), plan.getBrokerConfigurationChanges()));
         commands.updateConfigOfBrokers(plan.getBrokerConfigurationChanges());
@@ -45,20 +48,20 @@ public class Executor {
       }
 
       if (!plan.getTopicConfigurationChanges().isEmpty()) {
-        rollbacks.add(
-            rollbackConfig(currentState.getTopics(), plan.getTopicConfigurationChanges()));
+        rollbacks.append(
+            rollbackTopicConfig(currentState.getTopics(), plan.getTopicConfigurationChanges()));
         commands.updateConfigOfTopics(plan.getTopicConfigurationChanges());
         log.info("Topic configurations have been updated successfully.");
       }
 
       if (!plan.getTopicsToCreate().isEmpty()) {
-        rollbacks.add(rollbackCreate(plan.getTopicsToCreate()));
+        rollbacks.append(rollbackTopicCreate(plan.getTopicsToCreate()));
         commands.createTopics(plan.getTopicsToCreate());
         log.info("Topics have been created successfully.");
       }
 
       if (!plan.getReplicationChanges().isEmpty()) {
-        rollbacks.add(
+        rollbacks.append(
             rollbackReplication(currentState.getTopicMap(), plan.getReplicationChanges()));
         commands.updateReplication(plan.getReplicationChanges());
         log.info("Replication factors have been updated successfully.");
@@ -75,10 +78,7 @@ public class Executor {
       try {
         if (!plan.getTopicsToDelete().isEmpty()) {
           commands.deleteTopics(
-              plan.getTopicsToDelete().stream()
-                  .map(ExistingTopic::getName)
-                  .map(TopicName::get)
-                  .collect(Collectors.toSet()));
+              plan.getTopicsToDelete().map(ExistingTopic::getName).map(TopicName::get));
           log.info("Topics have been deleted successfully.");
         }
       } catch (Exception e) {
@@ -97,32 +97,27 @@ public class Executor {
     }
   }
 
-  public Callable<String> rollbackCreate(Collection<RequiredTopic> createdTopics) {
+  public Callable<String> rollbackTopicCreate(Traversable<RequiredTopic> createdTopics) {
     return () -> {
-      commands.deleteTopics(
-          createdTopics.stream()
-              .map(RequiredTopic::getName)
-              .map(TopicName::get)
-              .collect(Collectors.toSet()));
+      commands.deleteTopics(createdTopics.map(RequiredTopic::getName).map(TopicName::get));
       return "Rolled back new topic creation";
     };
   }
 
-  public Callable<String> rollbackConfig(
-      Collection<ExistingTopic> topics,
+  public Callable<String> rollbackTopicConfig(
+      Traversable<ExistingTopic> originalTopics,
       Map<TopicName, Map<String, Optional<String>>> configChanges) {
 
-    Map<TopicName, Map<String, Optional<String>>> rollback = new HashMap<>();
-
-    configChanges.forEach(
-        (topicName, config) -> {
-          Map<String, Optional<String>> topicConfig = new HashMap<>();
-          topics.stream()
-              .collect(toMap(ExistingTopic::getName, ExistingTopic::getConfig))
-              .get(topicName)
-              .forEach((name, value) -> topicConfig.put(name, Optional.ofNullable(value)));
-          rollback.put(topicName, topicConfig);
-        });
+    Map<TopicName, Map<String, Optional<String>>> rollback =
+        configChanges.map(
+            (topicName, config) ->
+                Map.entry(
+                    topicName,
+                    originalTopics
+                        .toMap(ExistingTopic::getName, ExistingTopic::getConfig)
+                        .get(topicName)
+                        .get()
+                        .map((name, value) -> Map.entry(name, Optional.ofNullable(value)))));
 
     return () -> {
       commands.updateConfigOfTopics(rollback);
@@ -131,25 +126,25 @@ public class Executor {
   }
 
   public Callable<String> rollbackBrokerConfig(
-      Collection<Broker> originalBrokers,
+      Traversable<Broker> originalBrokers,
       Map<BrokerId, Map<String, Optional<String>>> configChanges) {
 
     Map<BrokerId, Map<String, BrokerConfig>> originalConfigs =
-        originalBrokers.stream().collect(toMap(Broker::getId, Broker::getConfig));
-    Map<BrokerId, Map<String, Optional<String>>> rollback = new HashMap<>();
+        originalBrokers.toMap(Broker::getId, Broker::getConfig);
 
-    configChanges
-        .keySet()
-        .forEach(
-            brokerId -> {
-              Map<String, Optional<String>> brokerConfig = new HashMap<>();
-              originalConfigs
-                  .get(brokerId)
-                  .forEach(
-                      (name, value) ->
-                          brokerConfig.put(name, Optional.ofNullable(value.getValue())));
-              rollback.put(brokerId, brokerConfig);
-            });
+    Map<BrokerId, Map<String, Optional<String>>> rollback =
+        configChanges
+            .keySet()
+            .toMap(
+                brokerId ->
+                    Map.entry(
+                        brokerId,
+                        originalConfigs
+                            .get(brokerId)
+                            .get()
+                            .map(
+                                (name, value) ->
+                                    Map.entry(name, Optional.ofNullable(value.getValue())))));
 
     return () -> {
       commands.updateConfigOfBrokers(rollback);
@@ -158,29 +153,27 @@ public class Executor {
   }
 
   public Callable<String> rollbackReplication(
-      Map<TopicName, ExistingTopic> topicMap, Map<TopicName, List<Partition>> replicationChanges) {
+      Map<TopicName, ExistingTopic> topicMap,
+      Map<TopicName, Traversable<Partition>> replicationChanges) {
 
-    Map<TopicName, List<Partition>> rollback = new HashMap<>();
-
-    replicationChanges.forEach(
-        (topicName, replicationChange) -> {
-          List<Partition> rollbackTo =
-              replicationChange.stream()
-                  .map(
-                      partition ->
-                          new Partition(
-                              partition.getPartitionNumber(),
-                              deltaCalculator.selectBrokersForReplication(
-                                  partition.getReplicas(),
-                                  topicMap
-                                      .get(topicName)
-                                      .getPartitions()
-                                      .get(partition.getPartitionNumber())
-                                      .size())))
-                  .collect(Collectors.toList());
-
-          rollback.put(topicName, rollbackTo);
-        });
+    Map<TopicName, Traversable<Partition>> rollback =
+        replicationChanges.map(
+            (topicName, replicationChange) ->
+                Map.entry(
+                    topicName,
+                    replicationChange.map(
+                        partition ->
+                            new Partition(
+                                partition.getPartitionNumber(),
+                                deltaCalculator.selectBrokersForReplication(
+                                    partition.getReplicas(),
+                                    topicMap
+                                        .get(topicName)
+                                        .get()
+                                        .getPartitions()
+                                        .get(partition.getPartitionNumber())
+                                        .get()
+                                        .size())))));
 
     return () -> {
       commands.updateReplication(rollback);

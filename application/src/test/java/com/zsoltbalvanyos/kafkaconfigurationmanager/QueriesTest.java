@@ -5,9 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.times;
 
+import io.vavr.collection.*;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.*;
@@ -26,7 +25,7 @@ import org.junit.Test;
 
 public class QueriesTest {
 
-  EasyRandom random = TestUtil.randomizer;
+  EasyRandom random = TestUtil.randomizer();
   Admin admin = mock(Admin.class);
   Queries queries = new Queries(admin);
 
@@ -46,36 +45,41 @@ public class QueriesTest {
     when(describeConfigsResult.all())
         .thenReturn(
             KafkaFuture.completedFuture(
-                Map.of(
+                java.util.Map.of(
                     new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(node1.id())),
                     config1,
                     new ConfigResource(ConfigResource.Type.BROKER, String.valueOf(node2.id())),
                     config2)));
     when(admin.describeConfigs(any())).thenReturn(describeConfigsResult);
 
-    Set<Model.Broker> result = queries.getBrokers();
+    Traversable<Model.Broker> result = queries.getBrokers();
 
     assertThat(result)
         .containsExactlyInAnyOrderElementsOf(
-            Set.of(
+            HashSet.of(
                 new Model.Broker(
                     Model.BrokerId.of("1"),
-                    config1.entries().stream()
-                        .collect(
-                            Collectors.toMap(
-                                ConfigEntry::name,
-                                c ->
-                                    new Model.BrokerConfig(
-                                        c.name(), c.value(), c.isDefault(), c.isReadOnly())))),
+                    HashMap.ofAll(
+                        config1.entries().stream()
+                            .collect(
+                                Collectors.toMap(
+                                    ConfigEntry::name,
+                                    c ->
+                                        new Model.BrokerConfig(
+                                            c.name(), c.value(), c.isDefault(), c.isReadOnly()))))),
                 new Model.Broker(
                     Model.BrokerId.of("2"),
-                    config2.entries().stream()
-                        .collect(
-                            Collectors.toMap(
-                                ConfigEntry::name,
-                                c ->
-                                    new Model.BrokerConfig(
-                                        c.name(), c.value(), c.isDefault(), c.isReadOnly()))))));
+                    HashMap.ofAll(
+                        config2.entries().stream()
+                            .collect(
+                                Collectors.toMap(
+                                    ConfigEntry::name,
+                                    c ->
+                                        new Model.BrokerConfig(
+                                            c.name(),
+                                            c.value(),
+                                            c.isDefault(),
+                                            c.isReadOnly())))))));
   }
 
   @Test
@@ -95,7 +99,7 @@ public class QueriesTest {
     when(describeConfigsResult.all())
         .thenReturn(
             KafkaFuture.completedFuture(
-                Map.of(
+                java.util.Map.of(
                     new ConfigResource(ConfigResource.Type.TOPIC, topicListing1.name()), config1,
                     new ConfigResource(ConfigResource.Type.TOPIC, topicListing2.name()), config2)));
     when(admin.describeConfigs(any())).thenReturn(describeConfigsResult);
@@ -104,7 +108,7 @@ public class QueriesTest {
     when(describeTopicsResult.all())
         .thenReturn(
             KafkaFuture.completedFuture(
-                Map.of(
+                java.util.Map.of(
                     topicListing1.name(),
                     new TopicDescription(
                         topicListing1.name(),
@@ -121,23 +125,25 @@ public class QueriesTest {
                                 0, null, List.of(new Node(0, "", 0)), List.of()))))));
     when(admin.describeTopics(any())).thenReturn(describeTopicsResult);
 
-    List<Model.ExistingTopic> result = queries.getExistingTopics();
+    Traversable<Model.ExistingTopic> result = queries.getExistingTopics();
 
     assertThat(result)
         .containsExactlyInAnyOrderElementsOf(
             List.of(
                 new Model.ExistingTopic(
                     Model.TopicName.of(topicListing1.name()),
-                    Map.of(Model.PartitionNumber.of(0), List.of(0)),
-                    config1.entries().stream()
-                        .filter(ce -> !ce.isDefault())
-                        .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value))),
+                    HashMap.of(Model.PartitionNumber.of(0), io.vavr.collection.List.of(0)),
+                    HashMap.ofAll(
+                        config1.entries().stream()
+                            .filter(ce -> !ce.isDefault())
+                            .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value)))),
                 new Model.ExistingTopic(
                     Model.TopicName.of(topicListing2.name()),
-                    Map.of(Model.PartitionNumber.of(0), List.of(0)),
-                    config2.entries().stream()
-                        .filter(ce -> !ce.isDefault())
-                        .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value)))));
+                    HashMap.of(Model.PartitionNumber.of(0), io.vavr.collection.List.of(0)),
+                    HashMap.ofAll(
+                        config2.entries().stream()
+                            .filter(ce -> !ce.isDefault())
+                            .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value))))));
   }
 
   @Test
@@ -151,22 +157,19 @@ public class QueriesTest {
     var result = queries.getAcls();
 
     assertThat(aclBindings.stream().map(AclBinding::pattern).map(ResourcePattern::name))
-        .containsExactlyInAnyOrderElementsOf(
-            result.stream().map(Model.Acl::getName).collect(Collectors.toList()));
+        .containsExactlyInAnyOrderElementsOf(result.map(Model.Acl::getName));
     assertThat(
             aclBindings.stream()
                 .map(AclBinding::pattern)
                 .map(ResourcePattern::resourceType)
                 .map(ResourceType::name))
-        .containsExactlyInAnyOrderElementsOf(
-            result.stream().map(Model.Acl::getResourceType).collect(Collectors.toList()));
+        .containsExactlyInAnyOrderElementsOf(result.map(Model.Acl::getResourceType));
     assertThat(
             aclBindings.stream()
                 .map(AclBinding::pattern)
                 .map(ResourcePattern::patternType)
                 .map(PatternType::name))
-        .containsExactlyInAnyOrderElementsOf(
-            result.stream().map(Model.Acl::getPatternType).collect(Collectors.toList()));
+        .containsExactlyInAnyOrderElementsOf(result.map(Model.Acl::getPatternType));
   }
 
   @Test
@@ -187,20 +190,20 @@ public class QueriesTest {
     ListPartitionReassignmentsResult listPartitionReassignmentsResult =
         mock(ListPartitionReassignmentsResult.class);
 
-    KafkaFuture<Map<TopicPartition, PartitionReassignment>> future1 =
+    KafkaFuture<java.util.Map<TopicPartition, PartitionReassignment>> future1 =
         KafkaFuture.completedFuture(
-            Map.of(
+            java.util.Map.of(
                 new TopicPartition("topic-1", 0),
                 new PartitionReassignment(List.of(1), List.of(2), List.of(3))));
 
-    KafkaFuture<Map<TopicPartition, PartitionReassignment>> future2 =
+    KafkaFuture<java.util.Map<TopicPartition, PartitionReassignment>> future2 =
         KafkaFuture.completedFuture(
-            Map.of(
+            java.util.Map.of(
                 new TopicPartition("topic-1", 0),
                 new PartitionReassignment(List.of(1), List.of(2), List.of(3))));
 
-    KafkaFuture<Map<TopicPartition, PartitionReassignment>> future3 =
-        KafkaFuture.completedFuture(Map.of());
+    KafkaFuture<java.util.Map<TopicPartition, PartitionReassignment>> future3 =
+        KafkaFuture.completedFuture(java.util.Map.of());
 
     when(listPartitionReassignmentsResult.reassignments())
         .thenReturn(future1)
@@ -225,7 +228,7 @@ public class QueriesTest {
     when(listPartitionReassignmentsResult.reassignments())
         .thenReturn(
             KafkaFuture.completedFuture(
-                Map.of(
+                java.util.Map.of(
                     new TopicPartition("topic-1", 0),
                     new PartitionReassignment(List.of(1), List.of(2), List.of(3)))));
     when(admin.listPartitionReassignments()).thenReturn(listPartitionReassignmentsResult);

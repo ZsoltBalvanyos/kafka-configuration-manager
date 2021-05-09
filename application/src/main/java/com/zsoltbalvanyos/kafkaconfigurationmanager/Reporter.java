@@ -3,7 +3,7 @@ package com.zsoltbalvanyos.kafkaconfigurationmanager;
 import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import static java.util.stream.Collectors.*;
 
-import java.util.*;
+import io.vavr.collection.*;
 
 public class Reporter {
 
@@ -38,7 +38,7 @@ public class Reporter {
       sb.append("No topic found").append(NEWLINE);
     } else {
       sb.append(getHeader("Current state of existing topics"));
-      existingTopics.stream().map(this::stringifyTopic).forEach(sb::append);
+      existingTopics.map(this::stringifyTopic).forEach(sb::append);
     }
 
     if (acls.isEmpty()) {
@@ -94,14 +94,13 @@ public class Reporter {
                             .append(p.getPartitionNumber())
                             .append("]: ")
                             .append(
-                                Optional.ofNullable(
-                                        currentState
-                                            .getTopicMap()
-                                            .get(topicName)
-                                            .getPartitions()
-                                            .get(p.getPartitionNumber()))
-                                    .map(Collection::size)
-                                    .orElse(null))
+                                currentState
+                                    .getTopicMap()
+                                    .get(topicName)
+                                    .map(ExistingTopic::getPartitions)
+                                    .flatMap(
+                                        ps -> ps.get(p.getPartitionNumber()).map(Traversable::size))
+                                    .getOrElse(() -> null))
                             .append(" -> ")
                             .append(p.getReplicas().size()));
                 sb.append(NEWLINE);
@@ -116,7 +115,8 @@ public class Reporter {
               (topicName, partitionCount) ->
                   sb.append(topicName)
                       .append(": ")
-                      .append(currentState.getTopicMap().get(topicName).getPartitions().size())
+                      .append(
+                          currentState.getTopicMap().get(topicName).get().getPartitions().size())
                       .append(" -> ")
                       .append(partitionCount)
                       .append(NEWLINE));
@@ -135,11 +135,12 @@ public class Reporter {
                             .append(name)
                             .append(": ")
                             .append(
-                                currentState.getTopics().stream()
-                                    .collect(
-                                        toMap(ExistingTopic::getName, ExistingTopic::getConfig))
+                                currentState
+                                    .getTopics()
+                                    .toMap(ExistingTopic::getName, ExistingTopic::getConfig)
                                     .get(topicName)
-                                    .getOrDefault(name, "default"))
+                                    .getOrElse(HashMap.empty())
+                                    .getOrElse(name, "default"))
                             .append(" -> ")
                             .append(value.orElse("default")));
                 sb.append(NEWLINE);
@@ -148,12 +149,12 @@ public class Reporter {
 
     if (!plan.getTopicsToCreate().isEmpty()) {
       sb.append(getHeader("New topics to create"));
-      plan.getTopicsToCreate().stream().map(this::stringifyTopic).forEach(sb::append);
+      plan.getTopicsToCreate().map(this::stringifyTopic).forEach(sb::append);
     }
 
     if (!plan.getTopicsToDelete().isEmpty()) {
       sb.append(getHeader("New topics to delete"));
-      plan.getTopicsToDelete().stream().map(this::stringifyTopic).forEach(sb::append);
+      plan.getTopicsToDelete().map(this::stringifyTopic).forEach(sb::append);
     }
 
     return sb.append(NEWLINE).toString();
@@ -189,8 +190,7 @@ public class Reporter {
                   .append(
                       String.format(
                           "Id: %d, replicas: [%s]",
-                          partition.get(),
-                          replicas.stream().map(String::valueOf).collect(joining(","))));
+                          partition.get(), replicas.map(String::valueOf).collect(joining(","))));
             });
     return sb.append(NEWLINE).toString();
   }
@@ -205,7 +205,7 @@ public class Reporter {
     return sb.toString();
   }
 
-  private String stringifyAcls(Collection<Acl> acls) {
+  private String stringifyAcls(Traversable<Acl> acls) {
     StringBuilder sb = new StringBuilder();
 
     acls.forEach(
@@ -240,9 +240,9 @@ public class Reporter {
     return sb.toString();
   }
 
-  private <K extends Comparable<K>, V> SortedMap<K, V> getSortedMap(Map<K, V> map) {
-    SortedMap<K, V> result = new TreeMap<>();
-    map.keySet().stream().sorted().forEach(key -> result.put(key, map.get(key)));
-    return result;
+  private <K extends Comparable<K>, V> Map<K, V> getSortedMap(Map<K, V> map) {
+    java.util.SortedMap<K, V> result = new java.util.TreeMap<>();
+    map.keySet().toSortedSet().forEach(key -> result.put(key, map.get(key).get()));
+    return TreeMap.ofAll(result);
   }
 }

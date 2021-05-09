@@ -2,8 +2,11 @@ package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
 import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 
-import java.util.*;
-import java.util.stream.Stream;
+import io.vavr.Tuple2;
+import io.vavr.collection.Map;
+import io.vavr.collection.Traversable;
+import java.util.Collection;
+import java.util.Optional;
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.*;
@@ -19,24 +22,20 @@ public class Mappers {
       Map<ConfigResource, Collection<AlterConfigOp>> getAlterConfigRequest(
           Map<T, Map<String, Optional<String>>> updates, ConfigResource.Type type) {
 
-    Map<ConfigResource, Collection<AlterConfigOp>> alterConfigRequest = new HashMap<>();
+    return updates.map(
+        (name, requiredConfigs) ->
+            Map.entry(
+                new ConfigResource(type, name.get()),
+                requiredConfigs
+                    .map(this::getEntry)
+                    .map(t -> new AlterConfigOp(t._1, t._2))
+                    .asJava()));
+  }
 
-    updates.forEach(
-        (name, requiredConfigs) -> {
-          Set<AlterConfigOp> alterConfigOps = new HashSet<>();
-
-          requiredConfigs.forEach(
-              (key, value) ->
-                  alterConfigOps.add(
-                      new AlterConfigOp(
-                          new ConfigEntry(key, value.orElse("")),
-                          value
-                              .map(v -> AlterConfigOp.OpType.SET)
-                              .orElse(AlterConfigOp.OpType.DELETE))));
-
-          alterConfigRequest.put(new ConfigResource(type, name.get()), alterConfigOps);
-        });
-    return alterConfigRequest;
+  private Tuple2<ConfigEntry, AlterConfigOp.OpType> getEntry(String key, Optional<String> value) {
+    return Map.entry(
+        new ConfigEntry(key, value.orElse("")),
+        value.map(v -> AlterConfigOp.OpType.SET).orElse(AlterConfigOp.OpType.DELETE));
   }
 
   public NewTopic toNewTopic(RequiredTopic topic) {
@@ -44,32 +43,29 @@ public class Mappers {
             topic.getName().get(),
             topic.getPartitionCount(),
             topic.getReplicationFactor().map(Integer::shortValue))
-        .configs(topic.getConfig());
+        .configs(topic.getConfig().toJavaMap());
   }
 
   public Map<String, NewPartitions> toNewPartitions(Map<TopicName, Integer> updates) {
-    Map<String, NewPartitions> newPartitions = new HashMap<>();
-    updates.forEach(
+    return updates.map(
         (topicName, partitions) ->
-            newPartitions.put(topicName.get(), NewPartitions.increaseTo(partitions)));
-    return newPartitions;
+            Map.entry(topicName.get(), NewPartitions.increaseTo(partitions)));
   }
 
   public Map<TopicPartition, Optional<NewPartitionReassignment>> toReassignment(
-      Map<TopicName, List<Partition>> updates) {
-    Map<TopicPartition, Optional<NewPartitionReassignment>> topicPartitions = new HashMap<>();
-    updates.forEach(
+      Map<TopicName, Traversable<Partition>> updates) {
+    return updates.flatMap(
         (topicName, partitions) ->
-            partitions.forEach(
+            partitions.toMap(
                 partition ->
-                    topicPartitions.put(
+                    Map.entry(
                         new TopicPartition(topicName.get(), partition.getPartitionNumber().get()),
-                        Optional.of(new NewPartitionReassignment(partition.getReplicas())))));
-    return topicPartitions;
+                        Optional.of(
+                            new NewPartitionReassignment(partition.getReplicas().asJava())))));
   }
 
-  public Stream<AclBindingFilter> toAclBindingFilter(Acl acl) {
-    return acl.getPermissions().stream()
+  public Traversable<AclBindingFilter> toAclBindingFilter(Acl acl) {
+    return acl.getPermissions()
         .map(
             permission ->
                 new AclBindingFilter(
@@ -84,8 +80,8 @@ public class Mappers {
                         AclPermissionType.valueOf(permission.getPermissionType()))));
   }
 
-  public Stream<AclBinding> toAclBinding(Acl acl) {
-    return acl.getPermissions().stream()
+  public Traversable<AclBinding> toAclBinding(Acl acl) {
+    return acl.getPermissions()
         .map(
             permission ->
                 new AclBinding(

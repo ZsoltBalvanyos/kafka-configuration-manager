@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import io.vavr.Tuple;
-import io.vavr.collection.Stream;
-import java.util.*;
+import io.vavr.collection.*;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.jeasy.random.EasyRandom;
@@ -17,103 +17,99 @@ import org.mockito.junit.MockitoJUnitRunner;
 @RunWith(MockitoJUnitRunner.class)
 public class DeltaCalculatorTest {
 
-  CurrentState currentState = new CurrentState(Set.of(), createBrokers(12), Set.of());
-  RequiredState requiredState = new RequiredState(Set.of(), Map.of(), Set.of());
+  CurrentState currentState = new CurrentState(HashSet.empty(), createBrokers(12), HashSet.empty());
+  RequiredState requiredState =
+      new RequiredState(HashSet.empty(), HashMap.empty(), HashSet.empty());
 
-  EasyRandom random = TestUtil.randomizer;
+  EasyRandom random = TestUtil.randomizer();
   DeltaCalculator deltaCalculator = new DeltaCalculator(currentState, requiredState);
 
   private List<Broker> createBrokers(int n) {
-    return IntStream.range(0, n)
-        .mapToObj(i -> new Broker(BrokerId.of(String.valueOf(i + 1)), Map.of()))
-        .collect(Collectors.toList());
+    return List.ofAll(
+        IntStream.range(0, n)
+            .mapToObj(i -> new Broker(BrokerId.of(String.valueOf(i + 1)), HashMap.empty())));
   }
 
-  private List<Broker> toBroker(Collection<Integer> n) {
-    return n.stream()
-        .map(String::valueOf)
-        .map(i -> new Broker(BrokerId.of(i), Map.of()))
-        .collect(Collectors.toList());
+  private Traversable<Broker> toBroker(Traversable<Integer> n) {
+    return n.map(String::valueOf).map(i -> new Broker(BrokerId.of(i), HashMap.empty()));
   }
 
   @Test
   public void findNewAcls() {
-    List<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toList());
-    List<Acl> newAcls = random.objects(Acl.class, 5).collect(Collectors.toList());
-    List<Acl> merged = new ArrayList<>(newAcls);
-    merged.addAll(existingAcls);
+    List<Acl> existingAcls = getRandom(Acl.class, 10);
+    List<Acl> newAcls = getRandom(Acl.class, 5);
+    List<Acl> merged = existingAcls.appendAll(newAcls);
 
     var deltaCalculator =
-        new DeltaCalculator(currentState.withAcls(existingAcls), requiredState.withAcls(merged));
-    List<Acl> result = deltaCalculator.aclsToCreate();
+        new DeltaCalculator(
+            currentState.withAcls(List.ofAll(existingAcls)),
+            requiredState.withAcls(List.ofAll(merged)));
+    java.util.List<Acl> result = deltaCalculator.aclsToCreate().toJavaList();
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(newAcls);
   }
 
   @Test
   public void whenNoNewAcl_returnEmptySet() {
-    List<Acl> existingAcls = random.objects(Acl.class, 10).collect(Collectors.toList());
+    List<Acl> existingAcls = getRandom(Acl.class, 10);
 
     var deltaCalculator = new DeltaCalculator(currentState.withAcls(existingAcls), requiredState);
-    List<Acl> result = deltaCalculator.aclsToCreate();
+    Traversable<Acl> result = deltaCalculator.aclsToCreate();
 
     assertThat(result).isEmpty();
   }
 
   @Test
   public void findAclsToDelete() {
-    List<Acl> requiredAcls = random.objects(Acl.class, 10).collect(Collectors.toList());
-    List<Acl> oldAcls = random.objects(Acl.class, 5).collect(Collectors.toList());
+    List<Acl> requiredAcls = getRandom(Acl.class, 10);
+    List<Acl> oldAcls = getRandom(Acl.class, 5);
 
-    List<Acl> merged = new ArrayList<>(oldAcls);
-    merged.addAll(requiredAcls);
+    List<Acl> merged = List.ofAll(oldAcls);
+    merged.appendAll(requiredAcls);
 
     var deltaCalculator =
         new DeltaCalculator(currentState.withAcls(merged), requiredState.withAcls(requiredAcls));
-    List<Acl> result = deltaCalculator.aclsToDelete();
+    Traversable<Acl> result = deltaCalculator.aclsToDelete();
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(oldAcls);
   }
 
   @Test
   public void whenNoAclToDelete_returnEmptySet() {
-    List<Acl> acls = random.objects(Acl.class, 10).collect(Collectors.toList());
+    List<Acl> acls = getRandom(Acl.class, 10);
 
     var deltaCalculator =
         new DeltaCalculator(currentState.withAcls(acls), requiredState.withAcls(acls));
-    List<Acl> result = deltaCalculator.aclsToDelete();
+    Traversable<Acl> result = deltaCalculator.aclsToDelete();
 
     assertThat(result).isEmpty();
   }
 
   @Test
   public void findNewTopics() {
-    List<RequiredTopic> existingTopics =
-        random.objects(RequiredTopic.class, 10).collect(Collectors.toList());
-    List<RequiredTopic> newTopics =
-        random.objects(RequiredTopic.class, 5).collect(Collectors.toList());
-    List<RequiredTopic> merged = new ArrayList<>(newTopics);
-    merged.addAll(existingTopics);
+    List<RequiredTopic> existingTopics = getRandom(RequiredTopic.class, 10);
+    List<RequiredTopic> newTopics = getRandom(RequiredTopic.class, 5);
+    List<RequiredTopic> merged = List.ofAll(newTopics);
+    merged.appendAll(existingTopics);
 
     var deltaCalculator =
         new DeltaCalculator(
             currentState.withTopics(toExistingAll(existingTopics)),
             requiredState.withTopics(merged));
-    List<RequiredTopic> result = deltaCalculator.topicsToCreate();
+    Traversable<RequiredTopic> result = deltaCalculator.topicsToCreate();
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(newTopics);
   }
 
   @Test
   public void whenNoNewTopic_returnEmptySet() {
-    List<RequiredTopic> requiredTopics =
-        random.objects(RequiredTopic.class, 10).collect(Collectors.toList());
+    List<RequiredTopic> requiredTopics = getRandom(RequiredTopic.class, 10);
 
     var deltaCalculator =
         new DeltaCalculator(
             currentState.withTopics(toExistingAll(requiredTopics)),
             requiredState.withTopics(requiredTopics));
-    List<RequiredTopic> result = deltaCalculator.topicsToCreate();
+    Traversable<RequiredTopic> result = deltaCalculator.topicsToCreate();
 
     assertThat(result).isEmpty();
   }
@@ -128,32 +124,29 @@ public class DeltaCalculatorTest {
 
   @Test
   public void findTopicsToDelete() {
-    List<RequiredTopic> requiredTopics =
-        random.objects(RequiredTopic.class, 10).collect(Collectors.toList());
-    List<ExistingTopic> oldTopics =
-        random.objects(ExistingTopic.class, 5).collect(Collectors.toList());
+    List<RequiredTopic> requiredTopics = getRandom(RequiredTopic.class, 10);
+    List<ExistingTopic> oldTopics = getRandom(ExistingTopic.class, 5);
 
-    List<ExistingTopic> merged = new ArrayList<>(oldTopics);
-    merged.addAll(toExistingAll(requiredTopics));
+    List<ExistingTopic> merged = List.ofAll(oldTopics);
+    merged.appendAll(toExistingAll(requiredTopics));
 
     DeltaCalculator deltaCalculator =
         new DeltaCalculator(
             currentState.withTopics(merged), requiredState.withTopics(requiredTopics));
-    Collection<ExistingTopic> result = deltaCalculator.topicsToDelete();
+    Traversable<ExistingTopic> result = deltaCalculator.topicsToDelete();
 
     assertThat(result).containsExactlyInAnyOrderElementsOf(oldTopics);
   }
 
   @Test
   public void whenNoTopicToDelete_returnEmptyList() {
-    List<RequiredTopic> topics =
-        random.objects(RequiredTopic.class, 10).collect(Collectors.toList());
+    List<RequiredTopic> topics = getRandom(RequiredTopic.class, 10);
     List<ExistingTopic> existingTopics = toExistingAll(topics);
 
     DeltaCalculator deltaCalculator =
         new DeltaCalculator(
             currentState.withTopics(existingTopics), requiredState.withTopics(topics));
-    Collection<ExistingTopic> result = deltaCalculator.topicsToDelete();
+    Traversable<ExistingTopic> result = deltaCalculator.topicsToDelete();
 
     assertThat(result).isEmpty();
   }
@@ -167,24 +160,21 @@ public class DeltaCalculatorTest {
     RequiredTopic remainingTopic1 =
         random
             .nextObject(RequiredTopic.class)
-            .withConfig(Map.of("key1a", "value1a", "key1b", "value1b", "key1c", "value1c"));
+            .withConfig(HashMap.of("key1a", "value1a", "key1b", "value1b", "key1c", "value1c"));
     RequiredTopic remainingTopic2 =
         random
             .nextObject(RequiredTopic.class)
-            .withConfig(Map.of("key2a", "value2a", "key2b", "value2b", "key2c", "value2c"));
+            .withConfig(HashMap.of("key2a", "value2a", "key2b", "value2b", "key2c", "value2c"));
 
     RequiredTopic remainingTopicWithUpdatedConfig =
-        remainingTopic2.withConfig(Map.of("key2b", "value2b", "key2c", "value2x"));
+        remainingTopic2.withConfig(HashMap.of("key2b", "value2b", "key2c", "value2x"));
 
-    Set<ExistingTopic> currentTopics = new HashSet<>();
-    currentTopics.add(toExisting(topicToDelete));
-    currentTopics.add(toExisting(remainingTopic1));
-    currentTopics.add(toExisting(remainingTopic2));
+    Set<ExistingTopic> currentTopics =
+        HashSet.of(
+            toExisting(topicToDelete), toExisting(remainingTopic1), toExisting(remainingTopic2));
 
-    Set<RequiredTopic> requiredTopics = new HashSet<>();
-    requiredTopics.add(topicToCreate);
-    requiredTopics.add(remainingTopic1);
-    requiredTopics.add(remainingTopicWithUpdatedConfig);
+    Set<RequiredTopic> requiredTopics =
+        HashSet.of(topicToCreate, remainingTopic1, remainingTopicWithUpdatedConfig);
 
     DeltaCalculator deltaCalculator =
         new DeltaCalculator(
@@ -192,9 +182,9 @@ public class DeltaCalculatorTest {
 
     Map<TopicName, Map<String, Optional<String>>> result = deltaCalculator.topicConfigUpdate();
 
-    assertThat(result.get(remainingTopicWithUpdatedConfig.getName()))
-        .containsExactlyInAnyOrderEntriesOf(
-            Map.of(
+    assertThat(result.get(remainingTopicWithUpdatedConfig.getName()).get())
+        .containsExactlyInAnyOrderElementsOf(
+            HashMap.of(
                 "key2a", Optional.empty(),
                 "key2c", Optional.of("value2x")));
   }
@@ -204,18 +194,15 @@ public class DeltaCalculatorTest {
     List<Integer> availableBrokers = List.of(0, 1, 2, 3, 4, 5);
     List<Integer> currentBrokers = List.of(6, 7, 8, 9);
 
-    List<Integer> allBrokers = new ArrayList<>();
-    allBrokers.addAll(availableBrokers);
-    allBrokers.addAll(currentBrokers);
-
     DeltaCalculator deltaCalculator =
-        new DeltaCalculator(currentState.withBrokers(toBroker(allBrokers)), requiredState);
+        new DeltaCalculator(
+            currentState.withBrokers(toBroker(availableBrokers.appendAll(currentBrokers))),
+            requiredState);
     List<Integer> result = deltaCalculator.selectBrokersForReplication(currentBrokers, 7);
 
     assertThat(result).hasSize(7);
-    List<Integer> addedBrokers = new ArrayList<>();
-    addedBrokers.addAll(result);
-    addedBrokers.removeAll(currentBrokers);
+    List<Integer> addedBrokers = result.removeAll(currentBrokers);
+
     assertThat(addedBrokers).hasSize(3);
     assertThat(availableBrokers).containsAll(addedBrokers);
   }
@@ -284,19 +271,28 @@ public class DeltaCalculatorTest {
   @Test
   public void whenPartitionCountIncreased_topicWithNewPartitionCountIncluded() {
     Set<ExistingTopic> currentTopics =
-        Set.of(
+        HashSet.of(
             new ExistingTopic(
-                TopicName.of("topic-1"), Map.of(PartitionNumber.of(0), List.of(0)), Map.of()),
+                TopicName.of("topic-1"),
+                HashMap.of(PartitionNumber.of(0), List.of(0)),
+                HashMap.empty()),
             new ExistingTopic(
-                TopicName.of("topic-2"), Map.of(PartitionNumber.of(0), List.of(0)), Map.of()),
+                TopicName.of("topic-2"),
+                HashMap.of(PartitionNumber.of(0), List.of(0)),
+                HashMap.empty()),
             new ExistingTopic(
-                TopicName.of("topic-3"), Map.of(PartitionNumber.of(0), List.of(0)), Map.of()));
+                TopicName.of("topic-3"),
+                HashMap.of(PartitionNumber.of(0), List.of(0)),
+                HashMap.empty()));
 
     Set<RequiredTopic> requiredTopics =
-        Set.of(
-            new RequiredTopic(TopicName.of("topic-1"), Optional.of(1), Optional.of(1), Map.of()),
-            new RequiredTopic(TopicName.of("topic-2"), Optional.of(4), Optional.of(1), Map.of()),
-            new RequiredTopic(TopicName.of("topic-3"), Optional.of(2), Optional.of(1), Map.of()));
+        HashSet.of(
+            new RequiredTopic(
+                TopicName.of("topic-1"), Optional.of(1), Optional.of(1), HashMap.empty()),
+            new RequiredTopic(
+                TopicName.of("topic-2"), Optional.of(4), Optional.of(1), HashMap.empty()),
+            new RequiredTopic(
+                TopicName.of("topic-3"), Optional.of(2), Optional.of(1), HashMap.empty()));
 
     DeltaCalculator deltaCalculator =
         new DeltaCalculator(
@@ -304,8 +300,8 @@ public class DeltaCalculatorTest {
     Map<TopicName, Integer> result = deltaCalculator.partitionUpdate();
 
     assertThat(result)
-        .containsExactlyInAnyOrderEntriesOf(
-            Map.of(
+        .containsExactlyInAnyOrderElementsOf(
+            HashMap.of(
                 TopicName.of("topic-2"), 4,
                 TopicName.of("topic-3"), 2));
   }
@@ -313,24 +309,31 @@ public class DeltaCalculatorTest {
   @Test
   public void whenPartitionCountDecreased_errorThrown() {
     Set<ExistingTopic> currentTopics =
-        Set.of(
+        HashSet.of(
             new ExistingTopic(
-                TopicName.of("topic-1"), Map.of(PartitionNumber.of(0), List.of(0)), Map.of()),
+                TopicName.of("topic-1"),
+                HashMap.of(PartitionNumber.of(0), List.of(0)),
+                HashMap.empty()),
             new ExistingTopic(
-                TopicName.of("topic-2"), Map.of(PartitionNumber.of(0), List.of(0)), Map.of()),
+                TopicName.of("topic-2"),
+                HashMap.of(PartitionNumber.of(0), List.of(0)),
+                HashMap.empty()),
             new ExistingTopic(
                 TopicName.of("topic-3"),
-                Map.of(
+                HashMap.of(
                     PartitionNumber.of(0), List.of(0),
                     PartitionNumber.of(1), List.of(0),
                     PartitionNumber.of(2), List.of(0)),
-                Map.of()));
+                HashMap.empty()));
 
     Set<RequiredTopic> requiredTopics =
-        Set.of(
-            new RequiredTopic(TopicName.of("topic-1"), Optional.of(1), Optional.of(1), Map.of()),
-            new RequiredTopic(TopicName.of("topic-2"), Optional.of(4), Optional.of(1), Map.of()),
-            new RequiredTopic(TopicName.of("topic-3"), Optional.of(2), Optional.of(1), Map.of()));
+        HashSet.of(
+            new RequiredTopic(
+                TopicName.of("topic-1"), Optional.of(1), Optional.of(1), HashMap.empty()),
+            new RequiredTopic(
+                TopicName.of("topic-2"), Optional.of(4), Optional.of(1), HashMap.empty()),
+            new RequiredTopic(
+                TopicName.of("topic-3"), Optional.of(2), Optional.of(1), HashMap.empty()));
 
     DeltaCalculator deltaCalculator =
         new DeltaCalculator(
@@ -343,20 +346,23 @@ public class DeltaCalculatorTest {
   @Test
   public void testReplication() {
     Set<ExistingTopic> currentTopics =
-        Set.of(
+        HashSet.of(
             new ExistingTopic(
                 TopicName.of("topic-1"),
-                Map.of(PartitionNumber.of(0), List.of(1, 3, 4), PartitionNumber.of(1), List.of(3)),
-                Map.of()),
+                HashMap.of(
+                    PartitionNumber.of(0), List.of(1, 3, 4), PartitionNumber.of(1), List.of(3)),
+                HashMap.empty()),
             new ExistingTopic(
                 TopicName.of("topic-3"),
-                Map.of(PartitionNumber.of(0), List.of(1, 2, 3)),
-                Map.of()));
+                HashMap.of(PartitionNumber.of(0), List.of(1, 2, 3)),
+                HashMap.empty()));
 
     Set<RequiredTopic> requiredTopics =
-        Set.of(
-            new RequiredTopic(TopicName.of("topic-1"), Optional.of(2), Optional.of(3), Map.of()),
-            new RequiredTopic(TopicName.of("topic-3"), Optional.of(1), Optional.of(2), Map.of()));
+        HashSet.of(
+            new RequiredTopic(
+                TopicName.of("topic-1"), Optional.of(2), Optional.of(3), HashMap.empty()),
+            new RequiredTopic(
+                TopicName.of("topic-3"), Optional.of(1), Optional.of(2), HashMap.empty()));
 
     class MockDeltaCalculator extends DeltaCalculator {
       public MockDeltaCalculator(CurrentState currentState, RequiredState requiredState) {
@@ -365,24 +371,25 @@ public class DeltaCalculatorTest {
 
       @Override
       public List<Integer> selectBrokersForReplication(
-          Collection<Integer> utilizedBrokers, int replicationFactor) {
-        return Map.of(
+          Traversable<Integer> utilizedBrokers, int replicationFactor) {
+        return HashMap.of(
                 List.of(1, 3, 4), List.of(1, 3, 4),
                 List.of(3), List.of(3, 5, 6),
                 List.of(1, 2, 3), List.of(1, 2))
-            .get(List.copyOf(utilizedBrokers));
+            .get(List.ofAll(utilizedBrokers))
+            .get();
       }
     }
 
-    CurrentState currentState = new CurrentState(currentTopics, Set.of(), Set.of());
+    CurrentState currentState = new CurrentState(currentTopics, HashSet.empty(), HashSet.empty());
     RequiredState requiredState = this.requiredState.withTopics(requiredTopics);
     MockDeltaCalculator deltaCalculator = new MockDeltaCalculator(currentState, requiredState);
 
-    Map<TopicName, List<Partition>> result = deltaCalculator.replicationUpdate();
+    Map<TopicName, Traversable<Partition>> result = deltaCalculator.replicationUpdate();
 
     assertThat(result)
-        .containsExactlyInAnyOrderEntriesOf(
-            Map.of(
+        .containsExactlyInAnyOrderElementsOf(
+            HashMap.of(
                 TopicName.of("topic-1"),
                     List.of(new Partition(PartitionNumber.of(1), List.of(3, 5, 6))),
                 TopicName.of("topic-3"),
@@ -394,46 +401,49 @@ public class DeltaCalculatorTest {
     Broker broker =
         new Broker(
             BrokerId.of("1"),
-            Map.of(
+            HashMap.of(
                 "key1", new BrokerConfig("key1", "value1", false, false),
                 "key2", new BrokerConfig("key2", "value2", false, false),
                 "key3", new BrokerConfig("key3", "value3", false, false)));
 
     Map<String, String> requiredBrokerConfig =
-        Map.of(
+        HashMap.of(
             "key1", "value1",
             "key3", "value3-new");
 
     var result =
         new DeltaCalculator(
-                currentState.withBrokers(Set.of(broker)),
+                currentState.withBrokers(HashSet.of(broker)),
                 requiredState.withBrokers(requiredBrokerConfig))
             .brokerConfigUpdate();
 
     assertThat(result)
         .isEqualTo(
-            Map.of(
+            HashMap.of(
                 BrokerId.of("1"),
-                Map.of(
+                HashMap.of(
                     "key2", Optional.empty(),
                     "key3", Optional.of("value3-new"))));
   }
 
   private List<ExistingTopic> toExistingAll(List<RequiredTopic> topics) {
-    return topics.stream().map(this::toExisting).collect(Collectors.toList());
+    return topics.map(this::toExisting);
   }
 
   private ExistingTopic toExisting(RequiredTopic topic) {
-    Map<PartitionNumber, Collection<Integer>> partitions =
+    Map<PartitionNumber, Traversable<Integer>> partitions =
         Stream.range(0, topic.getPartitionCount().orElse(1))
-            .toJavaMap(
+            .toMap(
                 no ->
                     Tuple.of(
                         PartitionNumber.of(no),
                         Stream.range(0, topic.getReplicationFactor().orElse(1))
-                            .map(Integer::valueOf)
-                            .toJavaList()));
+                            .map(Integer::valueOf)));
 
     return new ExistingTopic(topic.getName(), partitions, topic.getConfig());
+  }
+
+  private <T> List<T> getRandom(Class<T> clazz, int n) {
+    return List.ofAll(random.objects(clazz, n).collect(Collectors.toList()));
   }
 }

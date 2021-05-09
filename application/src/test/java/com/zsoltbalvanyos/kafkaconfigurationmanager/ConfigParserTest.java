@@ -1,8 +1,12 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
+import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.*;
+import io.vavr.collection.HashMap;
+import io.vavr.collection.List;
+import io.vavr.collection.Traversable;
+import java.util.Optional;
 import org.junit.Test;
 
 public class ConfigParserTest {
@@ -10,12 +14,12 @@ public class ConfigParserTest {
 
   @Test
   public void configFileDeserializableToConfigurationModel() {
-    Model.Configuration configuration = configParser.getConfiguration();
-    List<Model.RequiredTopic> result = configParser.getRequiredState(configuration);
+    Configuration configuration = configParser.getConfiguration();
+    Traversable<RequiredTopic> result = configParser.getRequiredState(configuration);
 
     assertThat(configuration.getBrokerConfig())
         .isEqualTo(
-            Map.of(
+            HashMap.of(
                 "log.cleaner.threads", "3",
                 "sasl.kerberos.service.name", "kerberos"));
 
@@ -26,7 +30,7 @@ public class ConfigParserTest {
                     Model.TopicName.of("topic-1"),
                     Optional.of(2),
                     Optional.of(1),
-                    Map.of(
+                    HashMap.of(
                         "flush.messages", "1",
                         "segment.index.bytes", "20",
                         "cleanup.policy", "compact")),
@@ -34,14 +38,14 @@ public class ConfigParserTest {
                     Model.TopicName.of("topic-2"),
                     Optional.of(3),
                     Optional.of(5),
-                    Map.of(
+                    HashMap.of(
                         "flush.messages", "60",
                         "segment.index.bytes", "100")),
                 new Model.RequiredTopic(
                     Model.TopicName.of("topic-3"),
                     Optional.of(2),
                     Optional.of(2),
-                    Map.of(
+                    HashMap.of(
                         "flush.messages", "1",
                         "segment.index.bytes", "20",
                         "cleanup.policy", "delete"))));
