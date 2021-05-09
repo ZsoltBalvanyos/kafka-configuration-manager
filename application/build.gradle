@@ -36,7 +36,8 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:' + jacksonVersion
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:' + jacksonVersion
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:' + jacksonVersion
-    implementation 'javax.validation:validation-api:2.0.1.Final'
+    implementation 'io.vavr:vavr:0.9.0'
+    implementation 'io.vavr:vavr-jackson:0.10.3'
 
     implementation 'org.slf4j:slf4j-log4j12:1.7.30'
 
@@ -45,6 +46,7 @@ dependencies {
 
     testImplementation 'junit:junit:4.12'
     testImplementation 'org.jeasy:easy-random-core:4.2.0'
+    testImplementation 'io.github.xshadov:easy-random-vavr-extension:1.0.0'
     testImplementation 'org.mockito:mockito-core:3.5.10'
     testImplementation 'org.assertj:assertj-core:3.17.2'
 }

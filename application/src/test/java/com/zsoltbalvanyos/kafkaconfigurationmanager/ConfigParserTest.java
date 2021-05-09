@@ -1,48 +1,51 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
+import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
-import java.util.*;
+import io.vavr.collection.HashMap;
+import io.vavr.collection.List;
+import io.vavr.collection.Traversable;
+import java.util.Optional;
 import org.junit.Test;
 
 public class ConfigParserTest {
   ConfigParser configParser = new ConfigParser("./src/test/resources/schema-test.yml");
 
   @Test
-  public void configFileDeserializableToConfigurationModel() throws IOException {
-    Model.Configuration configuration = configParser.getConfiguration();
-    List<Model.Topic> result = configParser.getRequiredState(configuration);
+  public void configFileDeserializableToConfigurationModel() {
+    Configuration configuration = configParser.getConfiguration();
+    Traversable<RequiredTopic> result = configParser.getRequiredState(configuration);
 
     assertThat(configuration.getBrokerConfig())
         .isEqualTo(
-            Map.of(
+            HashMap.of(
                 "log.cleaner.threads", "3",
                 "sasl.kerberos.service.name", "kerberos"));
 
     assertThat(result)
         .containsExactlyInAnyOrderElementsOf(
             List.of(
-                new Model.Topic(
-                    "topic-1",
+                new Model.RequiredTopic(
+                    Model.TopicName.of("topic-1"),
                     Optional.of(2),
                     Optional.of(1),
-                    Map.of(
+                    HashMap.of(
                         "flush.messages", "1",
                         "segment.index.bytes", "20",
                         "cleanup.policy", "compact")),
-                new Model.Topic(
-                    "topic-2",
+                new Model.RequiredTopic(
+                    Model.TopicName.of("topic-2"),
                     Optional.of(3),
                     Optional.of(5),
-                    Map.of(
+                    HashMap.of(
                         "flush.messages", "60",
                         "segment.index.bytes", "100")),
-                new Model.Topic(
-                    "topic-3",
+                new Model.RequiredTopic(
+                    Model.TopicName.of("topic-3"),
                     Optional.of(2),
                     Optional.of(2),
-                    Map.of(
+                    HashMap.of(
                         "flush.messages", "1",
                         "segment.index.bytes", "20",
                         "cleanup.policy", "delete"))));

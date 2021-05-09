@@ -1,74 +1,84 @@
 package com.zsoltbalvanyos.kafkaconfigurationmanager;
 
-import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.ExecutionPlan;
+import static com.zsoltbalvanyos.kafkaconfigurationmanager.Model.*;
 
-import java.util.*;
+import io.vavr.collection.List;
+import io.vavr.collection.Map;
+import io.vavr.collection.Traversable;
+import java.util.Arrays;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @AllArgsConstructor
 public class Executor {
 
-  final Logger log = LoggerFactory.getLogger(getClass().getName());
-  final KafkaClient kafkaClient;
+  final Commands commands;
+  final Queries queries;
   final DeltaCalculator deltaCalculator;
-  final List<Callable<String>> rollbacks = new ArrayList<>();
 
-  public void run(ExecutionPlan plan, Collection<Model.Broker> brokers) throws Exception {
+  final List<Callable<String>> rollbacks = List.of();
+
+  @SneakyThrows
+  public void run(ExecutionPlan plan, CurrentState currentState) {
 
     try {
       if (!plan.getAclsToDelete().isEmpty()) {
         // TODO rollback
-        kafkaClient.deleteAcls(plan.getAclsToDelete());
+        commands.deleteAcls(plan.getAclsToDelete());
         log.info("ACLs have been deleted successfully");
       }
 
       if (!plan.getAclsToCreate().isEmpty()) {
         // TODO rollback
-        kafkaClient.createAcls(plan.getAclsToCreate());
+        commands.createAcls(plan.getAclsToCreate());
         log.info("New ACLs have been added successfully");
       }
 
       if (!plan.getBrokerConfigurationChanges().isEmpty()) {
-        rollbacks.add(rollbackBrokerConfig(brokers, plan.getBrokerConfigurationChanges()));
-        kafkaClient.updateConfigOfBrokers(plan.getBrokerConfigurationChanges());
+        rollbacks.append(
+            rollbackBrokerConfig(
+                deltaCalculator.currentState.getBrokers(), plan.getBrokerConfigurationChanges()));
+        commands.updateConfigOfBrokers(plan.getBrokerConfigurationChanges());
         log.info("Broker configurations have been updated successfully.");
       }
 
       if (!plan.getTopicConfigurationChanges().isEmpty()) {
-        rollbacks.add(
-            rollbackConfig(plan.getOriginalConfigs(), plan.getTopicConfigurationChanges()));
-        kafkaClient.updateConfigOfTopics(plan.getTopicConfigurationChanges());
+        rollbacks.append(
+            rollbackTopicConfig(currentState.getTopics(), plan.getTopicConfigurationChanges()));
+        commands.updateConfigOfTopics(plan.getTopicConfigurationChanges());
         log.info("Topic configurations have been updated successfully.");
       }
 
       if (!plan.getTopicsToCreate().isEmpty()) {
-        rollbacks.add(rollbackCreate(plan.getTopicsToCreate()));
-        kafkaClient.createTopics(plan.getTopicsToCreate());
+        rollbacks.append(rollbackTopicCreate(plan.getTopicsToCreate()));
+        commands.createTopics(plan.getTopicsToCreate());
         log.info("Topics have been created successfully.");
       }
 
       if (!plan.getReplicationChanges().isEmpty()) {
-        rollbacks.add(
-            rollbackReplication(plan.getOriginalPartitions(), plan.getReplicationChanges()));
-        kafkaClient.updateReplication(plan.getReplicationChanges());
+        rollbacks.append(
+            rollbackReplication(currentState.getTopicMap(), plan.getReplicationChanges()));
+        commands.updateReplication(plan.getReplicationChanges());
         log.info("Replication factors have been updated successfully.");
       }
 
-      if (!plan.getPartitionChanges().isEmpty() && kafkaClient.noOngoingReassignment()) {
-        kafkaClient.updatePartitions(plan.getPartitionChanges());
+      if (!plan.getPartitionChanges().isEmpty()) {
+        if (queries.ongoingReassignment(15))
+          throw new RuntimeException(
+              "Failed to update partition count due to ongoing partition reassignment");
+        commands.updatePartitions(plan.getPartitionChanges());
         log.info("Partition counts have been updated successfully.");
       }
 
       try {
         if (!plan.getTopicsToDelete().isEmpty()) {
-          kafkaClient.deleteTopics(
-              plan.getTopicsToDelete().stream()
-                  .map(Model.ExistingTopic::getName)
-                  .collect(Collectors.toSet()));
+          commands.deleteTopics(
+              plan.getTopicsToDelete().map(ExistingTopic::getName).map(TopicName::get));
           log.info("Topics have been deleted successfully.");
         }
       } catch (Exception e) {
@@ -87,85 +97,86 @@ public class Executor {
     }
   }
 
-  public Callable<String> rollbackCreate(Collection<Model.Topic> createdTopics) {
+  public Callable<String> rollbackTopicCreate(Traversable<RequiredTopic> createdTopics) {
     return () -> {
-      kafkaClient.deleteTopics(
-          createdTopics.stream().map(Model.Topic::getName).collect(Collectors.toSet()));
+      commands.deleteTopics(createdTopics.map(RequiredTopic::getName).map(TopicName::get));
       return "Rolled back new topic creation";
     };
   }
 
-  public Callable<String> rollbackConfig(
-      Map<String, Map<String, String>> originalConfigs,
-      Map<String, Map<String, Optional<String>>> configChanges) {
+  public Callable<String> rollbackTopicConfig(
+      Traversable<ExistingTopic> originalTopics,
+      Map<TopicName, Map<String, Optional<String>>> configChanges) {
 
-    Map<String, Map<String, Optional<String>>> rollback = new HashMap<>();
-
-    configChanges.forEach(
-        (topicName, config) -> {
-          Map<String, Optional<String>> topicConfig = new HashMap<>();
-          originalConfigs
-              .get(topicName)
-              .forEach((name, value) -> topicConfig.put(name, Optional.ofNullable(value)));
-          rollback.put(topicName, topicConfig);
-        });
+    Map<TopicName, Map<String, Optional<String>>> rollback =
+        configChanges.map(
+            (topicName, config) ->
+                Map.entry(
+                    topicName,
+                    originalTopics
+                        .toMap(ExistingTopic::getName, ExistingTopic::getConfig)
+                        .get(topicName)
+                        .get()
+                        .map((name, value) -> Map.entry(name, Optional.ofNullable(value)))));
 
     return () -> {
-      kafkaClient.updateConfigOfTopics(rollback);
+      commands.updateConfigOfTopics(rollback);
       return "Rolled back topic configuration changes";
     };
   }
 
   public Callable<String> rollbackBrokerConfig(
-      Collection<Model.Broker> brokers, Map<String, Map<String, Optional<String>>> configChanges) {
+      Traversable<Broker> originalBrokers,
+      Map<BrokerId, Map<String, Optional<String>>> configChanges) {
 
-    Map<String, Map<String, Model.BrokerConfig>> originalConfigs = new HashMap<>();
-    brokers.forEach(
-        broker -> originalConfigs.put(String.valueOf(broker.getId()), broker.getConfig()));
+    Map<BrokerId, Map<String, BrokerConfig>> originalConfigs =
+        originalBrokers.toMap(Broker::getId, Broker::getConfig);
 
-    Map<String, Map<String, Optional<String>>> rollback = new HashMap<>();
-
-    configChanges.forEach(
-        (brokerId, config) -> {
-          Map<String, Optional<String>> brokerConfig = new HashMap<>();
-          originalConfigs
-              .get(brokerId)
-              .forEach(
-                  (name, value) -> brokerConfig.put(name, Optional.ofNullable(value.getValue())));
-          rollback.put(brokerId, brokerConfig);
-        });
+    Map<BrokerId, Map<String, Optional<String>>> rollback =
+        configChanges
+            .keySet()
+            .toMap(
+                brokerId ->
+                    Map.entry(
+                        brokerId,
+                        originalConfigs
+                            .get(brokerId)
+                            .get()
+                            .map(
+                                (name, value) ->
+                                    Map.entry(name, Optional.ofNullable(value.getValue())))));
 
     return () -> {
-      kafkaClient.updateConfigOfBrokers(rollback);
+      commands.updateConfigOfBrokers(rollback);
       return "Rolled back broker configuration changes";
     };
   }
 
   public Callable<String> rollbackReplication(
-      Map<String, Map<Integer, Integer>> originalPartitions,
-      Map<String, List<Model.Partition>> replicationChanges) {
-    Map<String, List<Model.Partition>> rollback = new HashMap<>();
+      Map<TopicName, ExistingTopic> topicMap,
+      Map<TopicName, Traversable<Partition>> replicationChanges) {
 
-    replicationChanges.forEach(
-        (topicName, replicationChange) -> {
-          List<Model.Partition> rollbackTo =
-              replicationChange.stream()
-                  .map(
-                      partition ->
-                          new Model.Partition(
-                              partition.getPartitionNumber(),
-                              deltaCalculator.selectBrokersForReplication(
-                                  partition.getReplicas(),
-                                  originalPartitions
-                                      .get(topicName)
-                                      .get(partition.getPartitionNumber()))))
-                  .collect(Collectors.toList());
-
-          rollback.put(topicName, rollbackTo);
-        });
+    Map<TopicName, Traversable<Partition>> rollback =
+        replicationChanges.map(
+            (topicName, replicationChange) ->
+                Map.entry(
+                    topicName,
+                    replicationChange.map(
+                        partition ->
+                            new Partition(
+                                partition.getPartitionNumber(),
+                                deltaCalculator.selectBrokersForReplication(
+                                    partition.getReplicas(),
+                                    topicMap
+                                        .get(topicName)
+                                        .get()
+                                        .getPartitions()
+                                        .get(partition.getPartitionNumber())
+                                        .get()
+                                        .size())))));
 
     return () -> {
-      kafkaClient.updateReplication(rollback);
+      commands.updateReplication(rollback);
       return "Rolled back replication changes";
     };
   }
